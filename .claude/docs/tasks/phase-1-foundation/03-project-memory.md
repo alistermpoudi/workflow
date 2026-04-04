@@ -34,6 +34,7 @@ export class ProjectMemory {
 
   // Initialiser un nouveau projet
   async initProject(data) {
+    // fs.init() crée .workflow/, versions/, questions/ et briefings/
     await this.fs.init();
     const project = {
       name: data.name,
@@ -132,6 +133,14 @@ export class ProjectMemory {
   async listVersions() {
     return this.fs.listVersions();
   }
+
+  // failure-patterns.json — lu/écrit par FailurePatterns.js, exposé ici pour accès unifié
+  async getFailurePatterns() {
+    return this.fs.readJSON(this.fs.paths.failurePatterns()) ?? [];
+  }
+  async saveFailurePatterns(patterns) {
+    await this.fs.writeJSON(this.fs.paths.failurePatterns(), patterns);
+  }
 }
 ```
 
@@ -139,8 +148,11 @@ export class ProjectMemory {
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| 1 | `initProject()` crée tous les fichiers de base | ⬜ |
+| 1 | `initProject()` crée tous les fichiers de base + dossiers `questions/` et `briefings/` | ⬜ |
 | 2 | `getProjectSummary()` retourne moins de 500 tokens (vérifier en test) | ⬜ |
 | 3 | `updateProject()` met à jour `lastSessionAt` automatiquement | ⬜ |
 | 4 | `getProgress()` retourne la structure vide si fichier absent | ⬜ |
-| 5 | Tests unitaires couvrent init + lecture + écriture | ⬜ |
+| 5 | `getFailurePatterns()` retourne un tableau vide si le fichier n'existe pas encore | ⬜ |
+| 6 | Tests unitaires couvrent init + lecture + écriture | ⬜ |
+| 7 | `getLastSessionTimestamp()` retourne `null` si `lastSessionAt` est absent de `project.json` | ⬜ |
+| 8 | `initProject()` inclut `lastSessionAt` dans le schéma initial de `project.json` | ⬜ |

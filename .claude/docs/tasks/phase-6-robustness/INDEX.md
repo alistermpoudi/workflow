@@ -15,6 +15,7 @@ Rendre Workflow robuste sur de vrais projets de taille moyenne à grande. Les ou
 | 6.1 | [01-code-patcher.md](01-code-patcher.md) | `CodePatcher.js` — diffs chirurgicaux + fallback AST tree-sitter |
 | 6.2 | [02-code-indexer.md](02-code-indexer.md) | `CodeIndexer.js` — index JSON + variantes LLM + ripgrep |
 | 6.3 | [03-context-manager-advanced.md](03-context-manager-advanced.md) | Chargement sélectif avancé dans `ContextManager` |
+| 6.4 | [04-workflow-library.md](04-workflow-library.md) | `WorkflowLibrary.js` — apprentissage cross-projet (patterns + failure-patterns) |
 
 ## Notes sur `CodePatcher`
 

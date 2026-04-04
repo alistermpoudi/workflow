@@ -12,6 +12,8 @@ workflow/
 ├── eslint.config.js
 ├── vitest.config.js
 ├── .nvmrc
+├── bin/
+│   └── .gitkeep        (workflow-mcp.js ajouté en Phase 4)
 ├── src/
 │   ├── core/           (dossiers vides avec .gitkeep)
 │   ├── phases/
@@ -45,7 +47,9 @@ workflow/
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@octokit/rest": "^21.0.0",
     "chalk": "^5.3.0",
+    "chokidar": "^4.0.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

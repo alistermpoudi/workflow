@@ -108,9 +108,10 @@ Pose tes questions de manière concise et directe.`;
   }
 
   // Prompt pour générer features.json depuis vision.md
+  // Chaque feature inclut un champ "intent" propagé aux tâches par ValidationPhase
   static specFeatures(vision, existingFeatures = null) {
     return `À partir de cette vision produit, génère une liste de fonctionnalités structurée par version.
-Retourne un JSON valide avec la structure : { "v1.0": [{ "id": "F001", "name": "...", "description": "...", "priority": "HIGH|MEDIUM|LOW" }], "v1.5": [...] }
+Retourne un JSON valide avec la structure : { "v1.0": [{ "id": "F001", "name": "...", "description": "...", "priority": "HIGH|MEDIUM|LOW", "intent": "pourquoi l'utilisateur veut vraiment cette fonctionnalité" }], "v1.5": [...] }
 
 Vision :
 ${vision}
@@ -155,12 +156,18 @@ Retourne UNIQUEMENT le JSON.`;
       .map(([path, content]) => `\n### ${path}\n\`\`\`\n${content}\n\`\`\``)
       .join('');
 
+    // L'intent est injecté AVANT les critères d'acceptation
+    const intentText = task.intent
+      ? `\n## Intent (pourquoi cette fonctionnalité)\n${task.intent}`
+      : '';
+
     return `Implémente la tâche suivante :
 
 # ${task.id} : ${task.title}
 
 ## User Story
 ${task.userStory}
+${intentText}
 
 ## Fichiers à créer/modifier
 ${task.files?.map(f => `- ${f.path} [${f.action}]`).join('\n')}
@@ -172,7 +179,31 @@ ${decisionsText}
 ## Fichiers existants pertinents
 ${filesText || '(aucun fichier existant pour cette tâche)'}
 
+Si tu prends une décision technique importante, annote-la ainsi dans ta réponse :
+DÉCISION: <la décision>
+RAISON: <la justification>
+
+## Format de réponse OBLIGATOIRE
+
+Pour chaque fichier à créer ou modifier, utilise EXACTEMENT ce format :
+
+### chemin/vers/fichier.js
+\`\`\`javascript
+[contenu du fichier]
+\`\`\`
+
+Ne jamais utiliser un autre format. Le parser de Workflow extrait les fichiers
+depuis ce format précis — tout autre format est ignoré silencieusement.
+
 Génère le code complet pour chaque fichier. Commence directement par le code.`;
+  }
+
+  // Prompt de retry — utilisé dès la tentative 2, injecte l'erreur précédente
+  static generateCodeRetry(task, relevantFiles, relevantDecisions, lastError, knownFix) {
+    const base = PromptBuilder.generateCode(task, relevantFiles, relevantDecisions);
+    const errorSection = `\n\n---\nTa tentative précédente a échoué avec cette erreur :\n\`\`\`\n${lastError.output}\n\`\`\``;
+    const fixSection = knownFix ? `\nUn fix connu pour ce type d'erreur est : ${knownFix}` : '';
+    return base + errorSection + fixSection + '\n\nCorrige le code en tenant compte de cette erreur.';
   }
 }
 ```
@@ -185,4 +216,9 @@ Génère le code complet pour chaque fichier. Commence directement par le code.`
 | 2 | `LLMProvider.stream()` appelle `onChunk` pour chaque token | ⬜ |
 | 3 | `PromptBuilder.systemPrompt()` inclut le nom du projet et la stack | ⬜ |
 | 4 | `PromptBuilder.generateTasks()` inclut la règle de granularité | ⬜ |
-| 5 | Tests unitaires mockent l'API Claude | ⬜ |
+| 5 | `PromptBuilder.generateCode()` injecte `task.intent` avant les critères d'acceptation | ⬜ |
+| 6 | `PromptBuilder.generateCode()` inclut les annotations DÉCISION/RAISON dans le prompt | ⬜ |
+| 7 | `PromptBuilder.generateCode()` inclut l'instruction de format `### chemin/fichier.js` | ⬜ |
+| 8 | `PromptBuilder.generateCodeRetry()` inclut `lastError.output` dans le prompt | ⬜ |
+| 9 | `PromptBuilder.generateCodeRetry()` inclut `knownFix` si non null | ⬜ |
+| 10 | Tests unitaires mockent l'API Claude | ⬜ |

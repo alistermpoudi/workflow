@@ -15,6 +15,8 @@ Implémenter `ExecutionLoop.js` (boucle build/validate/correct) et la CLI readli
 | 3.1 | [01-execution-loop.md](01-execution-loop.md) | `ExecutionLoop.js` — build_validate + 3 retries + escalade |
 | 3.2 | [02-cli.md](02-cli.md) | `CLI.js` — interface readline + chalk, commandes de base |
 | 3.3 | [03-workflow-agent.md](03-workflow-agent.md) | `WorkflowAgent.js` — orchestrateur principal (boucle session) |
+| 3.4 | [04-daemon-heartbeat.md](04-daemon-heartbeat.md) | `DaemonHeartbeat.js` — daemon proactif, briefing matin, surveillance |
+| 3.5 | [05-watch-mode.md](05-watch-mode.md) | `WatchMode.js` — annotation passive via `.workflow/questions/` |
 
 ## Critères de Sortie de Phase
 
@@ -23,3 +25,7 @@ Implémenter `ExecutionLoop.js` (boucle build/validate/correct) et la CLI readli
 - [ ] L'auto-correction fonctionne sur 3 tentatives max
 - [ ] L'escalade à l'utilisateur affiche le contexte d'erreur complet
 - [ ] `SyncChecker` est appelé au démarrage de chaque session
+- [ ] `workflow daemon start` lance le daemon et il persiste après fermeture du terminal
+- [ ] Le daemon envoie un briefing lisible au démarrage de journée
+- [ ] `workflow watch` crée un fichier question quand un fichier hors-tâche est modifié
+- [ ] Les réponses aux questions sont intégrées au prochain `workflow start`

@@ -10,6 +10,14 @@ Les agents de code actuels souffrent d'un défaut structurel : ils vivent dans l
 
 Toute la connaissance du projet (vision, fonctionnalités, stack, décisions, état d'avancement) vit dans un dossier `.workflow/` à la racine du projet. Au démarrage de chaque session, Workflow lit ces fichiers et reprend exactement où il s'était arrêté — sans que l'utilisateur ait besoin de réexpliquer quoi que ce soit.
 
+### Les 5 Piliers de Workflow
+
+1. **Mémoire persistante** — tout vit dans `.workflow/`, zéro dépendance au contexte de conversation
+2. **Décisions actives** — `decisions.log` + `decisions-graph.json` (relations, contradictions, niveaux de confiance) consultés avant chaque tâche
+3. **Auto-correction intelligente** — `FailurePatterns.js` mémorise les erreurs et leurs solutions cross-tâches
+4. **Observation passive** — `WatchMode` détecte les changements manuels et pose des questions sans interrompre
+5. **Conscience continue** — `DaemonHeartbeat` surveille le projet et génère un briefing quotidien
+
 ---
 
 ## Deux Modes d'Existence
@@ -104,6 +112,16 @@ EN TANT QU'utilisateur
 JE VEUX pouvoir créer un compte et me connecter
 AFIN D'accéder à mes tâches de manière sécurisée
 
+## Intent
+L'utilisateur veut que les clients puissent s'inscrire seuls, SANS passer par un admin.
+L'email de confirmation est secondaire — ne pas bloquer l'inscription dessus.
+
+## Préconditions
+- filesExist: ["src/tools/FileSystem.js"]
+- tasksCompleted: ["TASK-001", "TASK-002"]
+- branch: "workflow/v1.0"
+- testsPass: true
+
 ## Dépendances
 - TASK-001 ✅ (setup projet + linter)
 - TASK-002 ✅ (framework tests configuré)
@@ -128,6 +146,8 @@ AFIN D'accéder à mes tâches de manière sécurisée
 ```
 
 > **Champ `Journal`** : Rempli automatiquement par Workflow à chaque report ou tentative partielle. Permet de savoir jusqu'où on est allé si la tâche a été interrompue.
+> **Champ `Intent`** : Capture le "pourquoi humain". Injecté dans les prompts LLM avant les critères. Ne peut pas être vide si des critères d'acceptation sont définis.
+> **Champ `Préconditions`** : Vérifié par `SyncChecker.checkPreconditions()` avant de démarrer la tâche. Généré automatiquement par `ValidationPhase`.
 
 ---
 
@@ -206,6 +226,22 @@ Workflow : "La v1.0 est terminée.
 
 ---
 
+## Observation Passive et Conscience Continue
+
+### `workflow watch` — Mode Annotation Passive
+
+Quand l'utilisateur code manuellement, `workflow watch` observe les modifications via `chokidar` et pose des questions de clarification sous forme de fichiers dans `.workflow/questions/`. Aucune interruption : les questions s'accumulent silencieusement et sont traitées au prochain `workflow start`.
+
+### `DaemonHeartbeat` — Surveillance Continue
+
+Un daemon tourne en arrière-plan et génère un briefing matin dans `.workflow/briefings/YYYY-MM-DD.md`. Il surveille l'état du projet et alerte sur les dérives.
+
+### `workflow onboard` — Onboarding Nouveau Développeur
+
+Un nouveau développeur sur le projet peut comprendre l'état complet en 30 secondes via `workflow onboard`, qui lit tous les fichiers `.workflow/` et génère un résumé structuré.
+
+---
+
 ## Sécurité MCP — `allowed_commands`
 
 Workflow n'exécute via MCP que les commandes explicitement listées dans `tech-stack.json#allowed_commands`. Toute autre commande est rejetée, loggée, et requiert une confirmation manuelle de l'utilisateur.
@@ -228,3 +264,51 @@ Exemples multi-stack :
 - Python → `pylint src/ && python -m pytest`
 - Rust → `cargo clippy && cargo test`
 - .NET → `dotnet build && dotnet test`
+
+---
+
+## Structure `.workflow/` Complète
+
+```
+.workflow/
+├── project.json
+├── vision.md
+├── features.json
+├── tech-stack.json
+├── code-index.json
+├── decisions.log              # Journal texte brut — lisible humain
+├── decisions-graph.json       # Relations entre décisions (CONTRADICTS, DEPENDS_ON, SUPERSEDES, REFINES)
+├── failure-patterns.json      # Erreurs connues + solutions cross-tâches
+├── questions/                 # WatchMode — questions en attente de réponse
+│   └── YYYY-MM-DD-Q001.md
+├── briefings/                 # DaemonHeartbeat — briefings quotidiens
+│   └── YYYY-MM-DD.md
+└── versions/
+    └── v1.0/
+        ├── meta.json
+        ├── progress.json
+        └── tasks/
+            └── TASK-001.md
+```
+
+---
+
+## Commandes CLI Complètes
+
+```bash
+workflow init "Nom"              # Initialise un projet
+workflow start                   # Lance/reprend les phases
+workflow run                     # Exécute la prochaine tâche
+workflow status                  # Affiche l'état du projet
+workflow watch                   # Mode annotation passive (WatchMode + chokidar)
+workflow daemon                  # Lance le DaemonHeartbeat en arrière-plan
+workflow onboard                 # Onboarding nouveau dev en 30 secondes
+workflow doc generate            # Génère README + ARCHITECTURE.md + CHANGELOG
+workflow audit                   # Détecte les divergences code/tâches
+workflow estimate [version]      # Estimations basées sur l'historique git réel
+workflow version list
+workflow version create v1.5 "Description"
+workflow version switch v1.5
+workflow version complete
+workflow version hotfix v1.0.1 "raison"
+```

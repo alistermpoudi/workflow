@@ -16,10 +16,12 @@ Créer le `PhaseManager.js` — l'orchestrateur des 5 phases. Il gère les trans
 ## États de Phase
 
 ```
-DISCOVERY → SPECIFICATION → VALIDATION → ARCHITECTURE → ACTIVE
+DISCOVERY → SPECIFICATION → ARCHITECTURE → VALIDATION → ACTIVE
 ```
 
 `ACTIVE` = Phase 5 Réalisation en cours. Les phases 1-4 ne se rejouent pas une fois `ACTIVE` — uniquement via `workflow version add-task` pour ajouter des tâches.
+
+> **Ordre de phases** : ARCHITECTURE précède VALIDATION. `ArchitecturePhase` génère `tech-stack.json` dont `ValidationPhase` a besoin pour générer les tâches avec le bon contexte stack.
 
 ## Implémentation
 
@@ -31,8 +33,12 @@ import { SpecificationPhase } from '../phases/SpecificationPhase.js';
 import { ValidationPhase } from '../phases/ValidationPhase.js';
 import { ArchitecturePhase } from '../phases/ArchitecturePhase.js';
 import { ExecutionPhase } from '../phases/ExecutionPhase.js';
+// WatchMode et DaemonHeartbeat disponibles en Phase 3 (tâches 3.4 et 3.5)
+// import { WatchMode } from '../core/WatchMode.js';
+// import { DaemonHeartbeat } from './DaemonHeartbeat.js';
 
-const PHASE_ORDER = ['DISCOVERY', 'SPECIFICATION', 'VALIDATION', 'ARCHITECTURE', 'ACTIVE'];
+// IMPORTANT : ARCHITECTURE avant VALIDATION — ValidationPhase a besoin de tech-stack.json
+const PHASE_ORDER = ['DISCOVERY', 'SPECIFICATION', 'ARCHITECTURE', 'VALIDATION', 'ACTIVE'];
 
 export class PhaseManager {
   constructor(projectRoot, llmProvider, io) {
@@ -73,6 +79,11 @@ export class PhaseManager {
     const handler = this.phases[phase];
     if (!handler) throw new Error(`Phase inconnue : ${phase}`);
 
+    // Au démarrage : intégrer les réponses WatchMode en attente (Phase 3 — tâche 3.5)
+    // await WatchMode.processAnswers(this.projectRoot);
+    // Vérifier si le briefing DaemonHeartbeat doit être affiché (Phase 3 — tâche 3.4)
+    // await DaemonHeartbeat.checkBriefing(this.projectRoot, this.io);
+
     const result = await handler.run();
 
     if (result.completed) {
@@ -101,3 +112,4 @@ export class PhaseManager {
 | 2 | `advancePhase()` ne peut pas aller au-delà de `ACTIVE` | ⬜ |
 | 3 | `runCurrentPhase()` avance automatiquement si `result.completed` | ⬜ |
 | 4 | `canStartPhase('ARCHITECTURE')` retourne false si on est en DISCOVERY | ⬜ |
+| 5 | `PHASE_ORDER` place ARCHITECTURE avant VALIDATION — `ValidationPhase` reçoit toujours un `techStack` | ⬜ |

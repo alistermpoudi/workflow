@@ -42,13 +42,15 @@ export class DiscoveryPhase {
     const answers = await this.io.ask('Tes réponses :');
 
     // 4. LLM génère vision.md
+    // L'intent global (pourquoi l'utilisateur construit ce projet) est capturé ici
     const visionPrompt = `Sur la base de cette description et de ces réponses, génère un fichier vision.md structuré.
 
 Description initiale : ${initialDescription}
 Questions posées : ${questions}
 Réponses : ${answers}
 
-Le vision.md doit couvrir : le problème résolu, les utilisateurs cibles, les fonctionnalités clés, les contraintes techniques, ce qui est EXCLU de la v1.`;
+Le vision.md doit couvrir : le problème résolu, les utilisateurs cibles, les fonctionnalités clés, les contraintes techniques, ce qui est EXCLU de la v1.
+Inclure une section "## Intent Global" qui capture le "pourquoi profond" du projet — ce que l'utilisateur veut vraiment accomplir au-delà des fonctionnalités listées.`;
 
     const visionContent = await this.llm.ask(visionPrompt);
 
@@ -58,8 +60,18 @@ Le vision.md doit couvrir : le problème résolu, les utilisateurs cibles, les f
 
     if (!approved) {
       const corrections = await this.io.ask('Quelles corrections apporter ?');
-      // Régénérer avec les corrections (appel récursif simplifié)
-      return this.run();
+      // Régénérer en injectant les corrections dans le prompt — elles ne sont pas perdues
+      const correctedPrompt = `${visionPrompt}\n\nCorrections demandées par l'utilisateur : ${corrections}\n\nGénère une vision.md révisée tenant compte de ces corrections.`;
+      const correctedVision = await this.llm.ask(correctedPrompt);
+
+      this.io.display('\n--- VISION RÉVISÉE ---\n' + correctedVision);
+      const finalApproved = await this.io.confirm('Cette version révisée te convient ? (o/n)');
+
+      if (!finalApproved) return this.run(); // Recommence depuis zéro si toujours rejeté
+
+      await this.memory.saveVision(correctedVision);
+      this.io.display('✅ vision.md sauvegardé.');
+      return { completed: true, output: 'vision.md' };
     }
 
     // 6. Sauvegarder
@@ -90,6 +102,8 @@ export class SpecificationPhase {
     if (!vision) throw new Error('vision.md manquant — relancer DiscoveryPhase');
 
     // 1. LLM génère les fonctionnalités
+    // Chaque fonctionnalité inclut un champ "intent" (pourquoi l'utilisateur la veut)
+    // Cet intent sera propagé dans les tâches générées par ValidationPhase
     const featuresPrompt = PromptBuilder.specFeatures(vision);
     const featuresJson = await this.llm.ask(featuresPrompt);
 
@@ -114,7 +128,11 @@ export class SpecificationPhase {
       const correctedPrompt = PromptBuilder.specFeatures(vision, features) +
         `\n\nModifications demandées : ${corrections}`;
       const corrected = await this.llm.ask(correctedPrompt);
-      features = JSON.parse(corrected);
+      try {
+        features = JSON.parse(corrected);
+      } catch {
+        throw new Error('LLM a retourné un JSON invalide après corrections — relancer la spécification');
+      }
     }
 
     // 3. Sauvegarder

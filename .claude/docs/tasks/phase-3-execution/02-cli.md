@@ -20,12 +20,51 @@ workflow init "Nom du projet"    # Initialise un projet dans le dossier courant
 workflow start                   # Lance/reprend les phases projet
 workflow run                     # Exécute la prochaine tâche
 workflow status                  # Affiche l'état du projet
+workflow watch                   # Mode annotation passive (watcher)
 workflow version list            # Liste les versions (Phase 5)
 workflow version create v1.5 "Description"
 workflow version switch v1.5
 workflow version complete
 workflow version hotfix v1.0.1 "raison"
 ```
+
+## Mode Annotation Passive — `workflow watch`
+
+Quand l'utilisateur code manuellement, il n'a pas envie d'être interrompu. `workflow watch` observe les modifications du projet en arrière-plan et pose des questions de clarification sous forme de fichiers dans `.workflow/questions/`.
+
+```
+.workflow/questions/
+├── 2026-04-03-Q001.md    # En attente de réponse
+└── 2026-04-03-Q002.md    # Répondue
+```
+
+**Format d'une question** :
+```markdown
+# Q001 — 2026-04-03
+
+Tu viens de créer `src/cache.js` avec une référence à Redis.
+
+Je l'enregistre comme décision permanente dans `tech-stack.json` ?
+Redis sera marqué comme dépendance de la v1.5.
+
+**Réponds en remplaçant `[...]` ci-dessous :**
+> [ oui / non / plus-tard ]
+
+**Raison (optionnel) :**
+>
+```
+
+L'utilisateur répond en éditant le fichier. Au prochain `workflow start` (ou immédiatement si `watch` tourne), Workflow intègre la réponse :
+- `oui` → décision enregistrée dans `decisions-graph.json` + `tech-stack.json`
+- `non` → question archivée, aucune action
+- `plus-tard` → question conservée pour la prochaine session
+
+**Déclencheurs du watcher** (seuil configurable) :
+- Nouveau fichier créé dans `src/`
+- Import d'une dépendance non listée dans `tech-stack.json`
+- Fichier modifié hors des `filesToModify` de la tâche courante
+
+**Pas d'interruption** : le watcher ne bloque jamais le travail en cours. Les questions s'accumulent silencieusement.
 
 ## Implémentation — `CLI.js`
 
@@ -125,11 +164,31 @@ try {
     case 'status':
       await agent.status();
       break;
+    case 'watch':
+      await agent.watch();
+      break;
+    case 'daemon':
+      await agent.daemon();
+      break;
+    case 'onboard':
+      await agent.onboard();
+      break;
+    case 'doc':
+      // workflow doc generate
+      if (args[0] === 'generate') await agent.docGenerate?.() ?? cli.display('[Phase 6]');
+      else cli.display('Usage: workflow doc generate');
+      break;
+    case 'audit':
+      await agent.audit?.() ?? cli.display('[Phase 6]');
+      break;
+    case 'estimate':
+      await agent.estimate?.(args[0]) ?? cli.display('[Phase 6]');
+      break;
     case 'version':
       await agent.version(args);
       break;
     default:
-      cli.display('Usage: workflow <init|start|run|status|version>');
+      cli.display('Usage: workflow <init|start|run|status|watch|daemon|onboard|doc|audit|estimate|version>');
   }
 } catch (err) {
   cli.error(err.message);
@@ -148,3 +207,6 @@ try {
 | 3 | `workflow --help` affiche la liste des commandes | ⬜ |
 | 4 | Les erreurs sont affichées en rouge avec le préfixe ❌ | ⬜ |
 | 5 | `cli.close()` ferme proprement readline sans laisser le process suspendu | ⬜ |
+| 6 | `workflow watch` démarre sans bloquer et crée un fichier question si nouveau fichier détecté | ⬜ |
+| 7 | `workflow start` intègre les réponses aux questions en attente avant de continuer | ⬜ |
+| 8 | Une question avec réponse `plus-tard` est conservée pour la session suivante | ⬜ |

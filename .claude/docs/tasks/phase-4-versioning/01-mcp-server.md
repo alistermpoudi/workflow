@@ -1,5 +1,8 @@
 # Phase 4 — Tâche 4.1 : MCPServer.js
 
+> **Note** : Ce dossier s'appelle `phase-4-versioning` pour des raisons historiques.
+> Il correspond à la **Phase 4 — MCP Server (Workflow Core)** dans CLAUDE.md.
+
 ## Objectif
 
 Exposer tous les outils Workflow via le protocole MCP. En mode Workflow Core, Workflow n'est pas le LLM — il fournit les outils. L'agent hôte (Claude Code, Cursor…) réfléchit et appelle les outils. La règle de sécurité `allowed_commands` s'applique à toutes les exécutions.
@@ -26,13 +29,24 @@ import { ProjectMemory } from '../core/ProjectMemory.js';
 // I/O silencieuse pour le mode MCP (pas d'affichage CLI)
 class SilentIO {
   display() {}
-  error(msg) { process.stderr.write(`[workflow-mcp] ERROR: ${msg}\n`); }
-  warn(msg) { process.stderr.write(`[workflow-mcp] WARN: ${msg}\n`); }
+  error(msg) { throw new Error(msg); } // Les erreurs doivent remonter
+  warn(msg) { /* no-op — les warnings sont perdus en mode MCP */ }
   success() {}
   header() {}
-  async ask() { return ''; }
-  async confirm() { return true; }
   displayStatus() {}
+
+  // En mode MCP, les confirmations doivent être EXPLICITEMENT passées via les paramètres de l'outil
+  // SilentIO refuse toute confirmation implicite pour éviter les actions silencieuses
+  async confirm(question) {
+    throw new Error(
+      `Confirmation requise mais non fournie en mode MCP : "${question}"\n` +
+      `Passe le paramètre "force: true" à l'outil MCP pour confirmer explicitement.`
+    );
+  }
+
+  async ask(question) {
+    throw new Error(`Input requis en mode MCP : "${question}". Utilise les paramètres de l'outil.`);
+  }
 }
 
 export class MCPServer {
@@ -75,6 +89,24 @@ export class MCPServer {
       // ── Phase Projet ──────────────────────────────────────────────
       case 'workflow_start_project':
         return this.agent.init(args.name);
+
+      case 'workflow_save_discovery':
+        return this.agent.phases.saveDiscovery(args.answers);
+
+      case 'workflow_propose_features':
+        return this.agent.phases.proposeFeatures();
+
+      case 'workflow_save_features':
+        return this.agent.phases.saveFeatures(args.validated);
+
+      case 'workflow_generate_tasks':
+        return this.agent.phases.generateTasks();
+
+      case 'workflow_validate_task':
+        return this.agent.phases.validateTask(args.taskId, args.approved);
+
+      case 'workflow_set_tech_stack':
+        return this.agent.phases.setTechStack(args.stack);
 
       case 'workflow_get_project_context':
         return this.memory.getProjectSummary();
@@ -126,6 +158,10 @@ export class MCPServer {
         return this.agent.versions.switch(args.version);
 
       case 'workflow_version_complete':
+        // Si force: true, SilentIO ne sera pas invoqué pour la confirmation
+        if (args.force) {
+          return this.agent.versions.complete({ skipConfirmation: true });
+        }
         return this.agent.versions.complete();
 
       case 'workflow_version_hotfix':
@@ -138,6 +174,25 @@ export class MCPServer {
         return { success: true, taskId };
       }
 
+      // ── Documentation & Utilitaires ──────────────────────────────
+      case 'workflow_doc_generate':
+        // Phase 7 — génère README + ARCHITECTURE.md + CHANGELOG depuis .workflow/
+        return this.agent.docGenerate?.() ?? { message: 'Disponible en Phase 7 (Génération & Audit)' };
+
+      case 'workflow_audit':
+        // Phase 7 — détecte les divergences entre code et tâches
+        return this.agent.audit?.() ?? { message: 'Disponible en Phase 7 (Génération & Audit)' };
+
+      case 'workflow_estimate': {
+        // Phase 7 — estimations basées sur l'historique git réel
+        const version = args.version ?? await this.memory.getActiveVersion();
+        return this.agent.estimate?.(version) ?? { message: 'Disponible en Phase 7 (Génération & Audit)' };
+      }
+
+      case 'workflow_onboard':
+        // Phase 5 — onboarding nouveau dev en 30 secondes depuis .workflow/
+        return this.agent.onboard?.() ?? { message: 'Disponible en Phase 5 (Présence & Intégrations)' };
+
       default:
         throw new Error(`Outil inconnu : ${name}`);
     }
@@ -145,6 +200,73 @@ export class MCPServer {
 
   getToolDefinitions() {
     return [
+      {
+        name: 'workflow_start_project',
+        description: 'Initialise un nouveau projet Workflow dans le répertoire courant',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Nom du projet' },
+            description: { type: 'string', description: 'Description courte du projet' },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'workflow_save_discovery',
+        description: 'Sauvegarde les réponses de la phase Discovery et génère vision.md',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            answers: { type: 'string', description: 'Réponses de l\'utilisateur aux questions de découverte' },
+          },
+          required: ['answers'],
+        },
+      },
+      {
+        name: 'workflow_propose_features',
+        description: 'Génère une proposition de fonctionnalités structurée par version depuis vision.md',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workflow_save_features',
+        description: 'Sauvegarde les fonctionnalités validées dans features.json',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            validated: { type: 'object', description: 'Objet features validé (structure: { "v1.0": [...], "v1.5": [...] })' },
+          },
+          required: ['validated'],
+        },
+      },
+      {
+        name: 'workflow_generate_tasks',
+        description: 'Génère les fichiers de tâches TASK-XXX.md pour toutes les versions depuis features.json',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workflow_validate_task',
+        description: 'Valide ou rejette une tâche générée avant qu\'elle soit enregistrée',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            taskId: { type: 'string', description: 'Ex: TASK-003' },
+            approved: { type: 'boolean', description: 'true = valider, false = rejeter' },
+          },
+          required: ['taskId', 'approved'],
+        },
+      },
+      {
+        name: 'workflow_set_tech_stack',
+        description: 'Définit et sauvegarde la stack technique dans tech-stack.json',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            stack: { type: 'object', description: 'Objet stack technique (language, framework, database, build_validate, test, allowed_commands)' },
+          },
+          required: ['stack'],
+        },
+      },
       {
         name: 'workflow_get_project_context',
         description: 'Retourne le contexte complet du projet courant (nom, stack, version active, tâche en cours)',
@@ -217,8 +339,16 @@ export class MCPServer {
       },
       {
         name: 'workflow_version_complete',
-        description: 'Complète la version active (merge dans main, bilan)',
-        inputSchema: { type: 'object', properties: {} },
+        description: 'Marque la version active comme COMPLETED et merge sur la branche par défaut',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            force: {
+              type: 'boolean',
+              description: 'Si true, complète même avec des tâches en attente (confirmation explicite)',
+            },
+          },
+        },
       },
       {
         name: 'workflow_version_hotfix',
@@ -243,6 +373,29 @@ export class MCPServer {
           },
           required: ['version', 'task'],
         },
+      },
+      {
+        name: 'workflow_doc_generate',
+        description: 'Génère README + ARCHITECTURE.md + CHANGELOG depuis .workflow/ (Phase 7)',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workflow_audit',
+        description: 'Détecte les divergences entre le code source et les tâches (Phase 7)',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workflow_estimate',
+        description: 'Estimations de temps basées sur l\'historique git réel (Phase 7)',
+        inputSchema: {
+          type: 'object',
+          properties: { version: { type: 'string', description: 'Version à estimer (ex: v1.5). Défaut: version active.' } },
+        },
+      },
+      {
+        name: 'workflow_onboard',
+        description: 'Génère un résumé d\'onboarding pour un nouveau développeur depuis .workflow/ (Phase 5)',
+        inputSchema: { type: 'object', properties: {} },
       },
     ];
   }
@@ -289,5 +442,11 @@ await server.start();
 | 2 | `workflow_get_current_task` retourne le contenu complet de la tâche | ⬜ |
 | 3 | `workflow_mark_task_done` met à jour `progress.json` | ⬜ |
 | 4 | `workflow_log_decision` appende dans `decisions.log` | ⬜ |
-| 5 | Outil inconnu retourne une erreur propre (pas un crash) | ⬜ |
-| 6 | Le serveur est détecté et listé dans Claude Code via MCP | ⬜ |
+| 5 | `workflow_doc_generate`, `workflow_audit`, `workflow_estimate` retournent un message clair "Disponible en Phase 7" | ⬜ |
+| 5b | `workflow_onboard` retourne un message clair "Disponible en Phase 5" | ⬜ |
+| 6 | Outil inconnu retourne une erreur propre (pas un crash) | ⬜ |
+| 7 | Le serveur est détecté et listé dans Claude Code via MCP | ⬜ |
+| 8 | `workflow_start_project` est visible par les clients MCP (dans `getToolDefinitions()`) | ⬜ |
+| 9 | Les 6 outils Phase 2 (`workflow_save_discovery`, `workflow_propose_features`, `workflow_save_features`, `workflow_generate_tasks`, `workflow_validate_task`, `workflow_set_tech_stack`) sont disponibles dans `callTool()` et `getToolDefinitions()` | ⬜ |
+| 10 | `workflow_version_complete` sans `force` throw si des tâches sont en attente | ⬜ |
+| 11 | `workflow_version_complete` avec `force: true` complète sans demander confirmation | ⬜ |

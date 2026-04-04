@@ -82,22 +82,40 @@ export class ValidationPhase {
       const corrections = await this.io.ask('Quelles modifications ? (ex: découpe TASK-003, fusionne TASK-007 et TASK-008)');
       // Régénérer avec corrections
       const correctedPrompt = prompt + `\n\nModifications demandées : ${corrections}`;
-      const corrected = JSON.parse(await this.llm.ask(correctedPrompt));
-      tasksList = corrected;
+      try {
+        tasksList = JSON.parse(await this.llm.ask(correctedPrompt));
+      } catch {
+        throw new Error('LLM a retourné un JSON invalide après corrections des tâches — relancer la validation');
+      }
     }
 
-    // Sauvegarder les tâches validées
+    // Valider que chaque tâche a un intent non vide si elle a des critères
+    for (const t of tasksList) {
+      if ((t.criteria?.length ?? 0) > 0 && !t.intent) {
+        this.io.warn(`⚠️  ${t.id} a des critères mais pas d'intent — le LLM doit le compléter.`);
+      }
+    }
+
+    // Sauvegarder les tâches validées (ValidationPhase génère Intent + Préconditions depuis les dépendances)
     for (const taskData of tasksList) {
+      // Générer automatiquement les préconditions depuis les dépendances déclarées
+      if (!taskData.preconditions && taskData.dependencies?.length > 0) {
+        taskData.preconditions = {
+          tasksCompleted: taskData.dependencies.map(d => d.id),
+          branch: `workflow/${version}`,
+        };
+      }
       await this.tasks.createTask(version, taskData);
     }
 
-    // Créer meta.json pour la version
+    // Créer meta.json pour la version (type: 'RELEASE' pour cohérence avec VersionManager.create())
     await this.memory.saveVersionMeta(version, {
       title: version,
       description: `Fonctionnalités ${version}`,
       status: 'DRAFT',
       branch: `workflow/${version}`,
       createdAt: new Date().toISOString(),
+      type: 'RELEASE',
     });
 
     this.io.display(`✅ ${tasksList.length} tâches créées pour ${version}.`);
@@ -137,7 +155,12 @@ Justifie brièvement chaque choix. Retourne JSON + justifications séparées.`;
     // Parser la partie JSON de la réponse
     const jsonMatch = response.match(/```json\n([\s\S]+?)\n```/) ||
                       response.match(/\{[\s\S]+\}/);
-    const techStack = JSON.parse(jsonMatch?.[1] ?? jsonMatch?.[0] ?? response);
+    let techStack;
+    try {
+      techStack = JSON.parse(jsonMatch?.[1] ?? jsonMatch?.[0] ?? response);
+    } catch {
+      throw new Error('LLM a retourné un JSON invalide pour la stack — relancer ArchitecturePhase');
+    }
 
     // 2. Afficher pour validation
     this.io.display('\n--- STACK PROPOSÉE ---');
@@ -153,11 +176,18 @@ Justifie brièvement chaque choix. Retourne JSON + justifications séparées.`;
     if (!approved) {
       const corrections = await this.io.ask('Quelles modifications ? (ex: utilise Bun au lieu de Node, PostgreSQL au lieu de SQLite)');
       // Re-générer avec corrections (simplifié)
-      const corrected = JSON.parse(await this.llm.ask(stackPrompt + `\nModifications : ${corrections}. Retourne UNIQUEMENT le JSON.`));
+      let corrected;
+      try {
+        corrected = JSON.parse(await this.llm.ask(stackPrompt + `\nModifications : ${corrections}. Retourne UNIQUEMENT le JSON.`));
+      } catch {
+        throw new Error('LLM a retourné un JSON invalide pour la stack corrigée — relancer ArchitecturePhase');
+      }
       Object.assign(techStack, corrected);
     }
 
     // 3. Sauvegarder tech-stack.json
+    // chokidar utilisé par WatchMode (Phase 3 — tâche 3.5)
+    // @octokit/rest utilisé par GitHubIntegration (Phase 5)
     await this.memory.saveTechStack(techStack);
 
     // 4. Imposer TASK-001 et TASK-002 en première position de la v1.0
@@ -174,9 +204,14 @@ Justifie brièvement chaque choix. Retourne JSON + justifications séparées.`;
     const versions = await this.memory.listVersions();
     const v1 = versions.find(v => v === 'v1.0') ?? 'v1.0';
 
-    // Vérifier que ces tâches n'existent pas déjà
-    const existing = await this.tasks.getPendingTasks(v1);
-    if (existing.includes('TASK-001')) return;
+    // Vérifier que ces tâches n'existent pas déjà — toutes les statuts (pending, done, failed)
+    const progress = await this.memory.getProgress(v1);
+    const allTaskIds = [
+      ...(progress.pending ?? []),
+      ...(progress.done ?? []),
+      ...((progress.failed ?? []).map(f => (typeof f === 'string' ? f : f.id))),
+    ];
+    if (allTaskIds.includes('TASK-001')) return;
 
     await this.tasks.createTask(v1, {
       id: 'TASK-001',
@@ -220,6 +255,11 @@ Justifie brièvement chaque choix. Retourne JSON + justifications séparées.`;
 |---|---------|---------|
 | 1 | `ValidationPhase` applique la règle de granularité dans le prompt | ⬜ |
 | 2 | `ValidationPhase` affiche un avertissement si une tâche a >3 fichiers | ⬜ |
-| 3 | `ArchitecturePhase` sauvegarde `tech-stack.json` avec `allowed_commands` | ⬜ |
-| 4 | TASK-001 et TASK-002 sont toujours créées en tête de v1.0 | ⬜ |
-| 5 | TASK-001/002 ne sont pas créées en double si elles existent déjà | ⬜ |
+| 3 | `ValidationPhase` génère les `preconditions` depuis les dépendances si absent | ⬜ |
+| 4 | `ValidationPhase` avertit si une tâche a des critères mais pas d'intent | ⬜ |
+| 5 | `ArchitecturePhase` sauvegarde `tech-stack.json` avec `allowed_commands` | ⬜ |
+| 6 | TASK-001 et TASK-002 sont toujours créées en tête de v1.0 | ⬜ |
+| 7 | TASK-001/002 ne sont pas créées en double même si TASK-001 est `done` ou `failed` | ⬜ |
+| 8 | JSON.parse après corrections (Validation + Spec) lève une erreur explicite si réponse non-JSON | ⬜ |
+| 9 | `saveVersionMeta()` inclut `type: 'RELEASE'` — cohérent avec `VersionManager.create()` | ⬜ |
+| 10 | `ArchitecturePhase` : les deux `JSON.parse` (initial + corrections) lèvent une erreur explicite si non-JSON | ⬜ |

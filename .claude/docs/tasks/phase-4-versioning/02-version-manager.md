@@ -1,5 +1,8 @@
 # Phase 4 — Tâche 4.2 : VersionManager.js + GitManager.js (complet)
 
+> **Note** : Ce dossier s'appelle `phase-4-versioning` pour des raisons historiques.
+> Il correspond à la **Phase 4 — MCP Server (Workflow Core)** dans CLAUDE.md.
+
 ## Objectif
 
 Implémenter `VersionManager.js` — le gestionnaire complet du cycle de vie des versions. Il couple les versions Workflow aux branches Git et applique les règles strictes (no stash, une seule version ACTIVE, etc.). Cette tâche complète aussi `GitManager.js` avec les commandes d'écriture (checkout, merge, branch).
@@ -19,30 +22,47 @@ Implémenter `VersionManager.js` — le gestionnaire complet du cycle de vie des
 ```javascript
 // À ajouter dans src/tools/GitManager.js
 
-// Créer et switcher vers une branche
+// Créer et switcher vers une branche (sûr — nom de branche passé via execFile)
 async createBranch(branch) {
-  await this.run(`git checkout -b ${branch}`);
+  return this.runSafe('git', ['checkout', '-b', branch]);
 }
 
-// Switcher vers une branche existante
+// Switcher vers une branche existante (sûr)
 async checkout(branch) {
-  await this.run(`git checkout ${branch}`);
+  return this.runSafe('git', ['checkout', branch]);
 }
 
-// Merger une branche dans la courante
+// Merger une branche dans la courante (sûr)
 async merge(branch) {
-  await this.run(`git merge ${branch} --no-ff -m "Merge ${branch}"`);
+  return this.runSafe('git', ['merge', '--no-ff', branch]);
 }
 
-// Commiter tous les changements
+// Commiter tous les changements (sûr — message passé via execFile, sans interprétation shell)
 async commit(message) {
-  await this.run('git add -A');
-  await this.run(`git commit -m "${message.replace(/"/g, '\\"')}"`);
+  await this.runSafe('git', ['add', '-A']);
+  return this.runSafe('git', ['commit', '-m', message]);
 }
 
-// Tag d'une version
+// Tag d'une version (sûr)
 async tag(version) {
-  await this.run(`git tag -a ${version} -m "Version ${version}"`);
+  return this.runSafe('git', ['tag', '-a', version, '-m', `Version ${version}`]);
+}
+
+// Détecter la branche par défaut (main ou master ou autre)
+async getDefaultBranch() {
+  try {
+    // Essayer d'abord via remote tracking
+    const result = await this.run('git symbolic-ref refs/remotes/origin/HEAD');
+    return result.replace('refs/remotes/origin/', '');
+  } catch {
+    // Fallback : chercher main ou master localement
+    try {
+      await this.run('git rev-parse --verify main');
+      return 'main';
+    } catch {
+      return 'master';
+    }
+  }
 }
 ```
 
@@ -96,14 +116,29 @@ export class VersionManager {
   }
 
   // Créer une nouvelle version
+  // Cas nominal : version absente → crée meta.json + branche Git
+  // Cas post-ValidationPhase : version déjà dans .workflow/ mais branche Git absente → crée seulement la branche
   async create(name, description) {
     const versions = await this.memory.listVersions();
+    const branch = `workflow/${name}`;
+
     if (versions.includes(name)) {
-      throw new Error(`La version "${name}" existe déjà.`);
+      // La version existe dans .workflow/ — vérifier si la branche Git est aussi là
+      const branchExists = await this.git.branchExists(branch);
+      if (branchExists) {
+        throw new Error(
+          `La version "${name}" existe déjà (meta.json + branche Git).\n` +
+          `Utilise \`workflow version switch ${name}\` pour l'activer.`
+        );
+      }
+      // Branche absente — créer uniquement la branche (ValidationPhase a déjà créé le meta.json)
+      await this.git.createBranch(branch);
+      this.io.display(`→ git checkout -b ${branch}`);
+      this.io.success(`Branche "${branch}" créée pour la version "${name}" existante.`);
+      return { version: name, branch };
     }
 
     // Créer la branche Git
-    const branch = `workflow/${name}`;
     const branchExists = await this.git.branchExists(branch);
     if (!branchExists) {
       await this.git.createBranch(branch);
@@ -124,32 +159,55 @@ export class VersionManager {
     return { version: name, branch };
   }
 
-  // Switcher vers une version (bloque si repo non propre)
+  // Switcher vers une version (bloque si repo non propre ou si version active non complétée)
   async switch(version) {
+    // 1. Vérifier que le repo est propre
     const check = await this.sync.checkBeforeSwitch();
     if (!check.canSwitch) {
       this.io.warn(check.message);
       this.io.display('Commite tes changements puis relance `workflow version switch ' + version + '`');
-      return { switched: false };
+      return { success: false, message: check.message };
     }
 
+    // 2. Vérifier que la version cible existe
     const meta = await this.memory.getVersionMeta(version);
-    if (!meta) throw new Error(`Version "${version}" introuvable.`);
+    if (!meta) return { success: false, message: `Version "${version}" introuvable.` };
 
+    // 3. Vérifier la règle "1 version ACTIVE à la fois"
+    const currentVersion = await this.memory.getActiveVersion();
+    if (currentVersion && currentVersion !== version) {
+      const currentMeta = await this.memory.getVersionMeta(currentVersion);
+      if (currentMeta?.status === 'ACTIVE') {
+        // Autoriser seulement si la version cible est un hotfix
+        const isHotfix = meta.type === 'HOTFIX';
+        if (!isHotfix) {
+          const message =
+            `Impossible de switcher vers ${version} : la version ${currentVersion} est toujours ACTIVE.\n` +
+            `Complète ${currentVersion} avec "workflow version complete" avant de changer de version.\n` +
+            `Exception : les hotfixes peuvent interrompre une version ACTIVE.`;
+          this.io.warn(message);
+          return { success: false, message };
+        }
+      }
+    }
+
+    // 4. Effectuer le switch + passer la version à ACTIVE
     await this.git.checkout(meta.branch);
+    await this.memory.saveVersionMeta(version, { ...meta, status: STATUS.ACTIVE });
     await this.memory.updateProject({ currentVersion: version });
 
     this.io.success(`Switché vers ${version} (${meta.branch}).`);
-    return { switched: true, version, branch: meta.branch };
+    return { success: true, version, branch: meta.branch };
   }
 
   // Marquer la version active comme complétée
-  async complete() {
+  // options.skipConfirmation = true pour bypasser la confirmation (mode MCP avec force: true)
+  async complete(options = {}) {
     const activeVersion = await this.memory.getActiveVersion();
     if (!activeVersion) throw new Error('Aucune version active.');
 
     const progress = await this.memory.getProgress(activeVersion);
-    if (progress.pending.length > 0) {
+    if (progress.pending.length > 0 && options.skipConfirmation !== true) {
       const confirm = await this.io.confirm(
         `⚠️ ${progress.pending.length} tâche(s) en attente. Compléter quand même ?`
       );
@@ -158,14 +216,21 @@ export class VersionManager {
 
     const meta = await this.memory.getVersionMeta(activeVersion);
 
-    // Merger dans main
-    await this.git.checkout('main');
+    // Merger dans la branche par défaut (main ou master)
+    const defaultBranch = await this.git.getDefaultBranch();
+    await this.git.checkout(defaultBranch);
     await this.git.merge(meta.branch);
     await this.git.tag(activeVersion);
 
     // Mettre à jour le statut
     await this.memory.saveVersionMeta(activeVersion, { ...meta, status: STATUS.COMPLETED });
     await this.memory.updateProject({ currentVersion: null });
+
+    // Fusionner les failure-patterns du projet vers la bibliothèque globale (Phase 6)
+    // await WorkflowLibrary.mergeProjectFailures(this.projectRoot);
+
+    // Générer le CHANGELOG automatiquement (Phase 6)
+    // await DocGenerator.generateChangelog(this.projectRoot, activeVersion);
 
     // Afficher le bilan
     await this.displayCompletionSummary(activeVersion, progress);
@@ -212,6 +277,28 @@ export class VersionManager {
     return { hotfix: name, branch: hotfixBranch, suggestBackport: backport };
   }
 
+  // Retourner l'état complet d'une version (ou de la version active si non spécifiée)
+  async status(version = null) {
+    const targetVersion = version ?? await this.memory.getActiveVersion();
+    if (!targetVersion) return { error: 'Aucune version active' };
+
+    const meta = await this.memory.getVersionMeta(targetVersion);
+    const progress = await this.memory.getProgress(targetVersion);
+
+    return {
+      version: targetVersion,
+      status: meta?.status ?? 'UNKNOWN',
+      branch: meta?.branch ?? null,
+      done: progress.done.length,
+      pending: progress.pending.length,
+      deferred: progress.deferred?.length ?? 0,
+      tasks: {
+        done: progress.done,
+        pending: progress.pending,
+      },
+    };
+  }
+
   async displayCompletionSummary(version, progress) {
     this.io.header(`Bilan ${version}`);
     this.io.display(`✅ ${progress.done.length} tâches complétées`);
@@ -234,5 +321,19 @@ export class VersionManager {
 | 3 | `switch` fait le `git checkout` ET met à jour `currentVersion` dans `project.json` | ⬜ |
 | 4 | `complete` merge dans main et tag la version | ⬜ |
 | 5 | `complete` affiche le bilan avec tâches reportées | ⬜ |
-| 6 | `hotfix` crée la branche depuis la branche parente (pas main) | ⬜ |
-| 7 | Une seule version peut être ACTIVE à la fois | ⬜ |
+| 6 | `complete` contient les appels commentés `WorkflowLibrary.mergeProjectFailures()` et `DocGenerator.generateChangelog()` (Phase 6) | ⬜ |
+| 7 | `hotfix` crée la branche depuis la branche parente (pas main) | ⬜ |
+| 8 | Une seule version peut être ACTIVE à la fois | ⬜ |
+| 9 | `status()` sans argument retourne l'état de la version active | ⬜ |
+| 10 | `status('v1.0')` retourne l'état de v1.0 même si une autre version est active | ⬜ |
+| 11 | `switch('v1.5')` est refusé si v1.0 est encore ACTIVE (message explicite) | ⬜ |
+| 12 | `switch('hotfix/v1.0.1')` est autorisé même si v1.5 est ACTIVE (type HOTFIX) | ⬜ |
+| 13 | `switch('v1.5')` est autorisé si v1.0 est COMPLETED | ⬜ |
+| 14 | `complete()` fonctionne sur un repo avec branche par défaut `master` | ⬜ |
+| 15 | `complete()` fonctionne sur un repo avec branche par défaut `main` | ⬜ |
+| 16 | `complete({ skipConfirmation: true })` ne demande pas de confirmation | ⬜ |
+| 17 | `complete()` sans `skipConfirmation` demande bien la confirmation avant de procéder | ⬜ |
+| 18 | `switch(version)` met à jour le statut de la version à `ACTIVE` dans `meta.json` | ⬜ |
+| 19 | `switch('v1.5')` est refusé si une autre version existe avec `status: ACTIVE` (règle appliquée réellement) | ⬜ |
+| 20 | `create('v1.0')` après `ValidationPhase` ne throw pas si meta.json existe mais branche absente | ⬜ |
+| 21 | `create('v1.0')` throw si meta.json ET branche Git existent déjà (message explicite avec `workflow version switch`) | ⬜ |

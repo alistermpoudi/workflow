@@ -1,8 +1,8 @@
-# Phase 5 — Interfaces Supplémentaires (V2)
+# Phase 5 — Présence & Intégrations (V1)
 
 ## Objectif
 
-Étendre Workflow avec des interfaces supplémentaires. Cette phase est distincte du MVP — elle ajoute de la valeur après que le noyau est stable et testé.
+Rendre Workflow présent partout où le développeur travaille, et connecté aux outils qu'il utilise déjà. À l'issue de cette phase, Workflow est dans la sidebar VS Code, branché sur GitHub, et permet à un nouveau développeur de s'onboarder en 30 secondes.
 
 ## Dépendances
 
@@ -12,14 +12,22 @@
 
 | Tâche | Fichier | Description | Priorité |
 |-------|---------|-------------|----------|
-| 5.1 | [01-telegram-bot.md](01-telegram-bot.md) | `TelegramBot.js` — notifications + interactions courtes | V2 |
-| 5.2 | [02-rest-api.md](02-rest-api.md) | `RestAPI.js` — API REST locale Express | V2 |
-| 5.3 | [03-cli-ink.md](03-cli-ink.md) | Migration CLI vers Ink (React terminal) | V2 |
-| 5.4 | [04-pipe-cli.md](04-pipe-cli.md) | `PipeCLI.js` — stdin/stdout pipe pour scripts | V2 |
+| 5.1 | [01-vscode-extension.md](01-vscode-extension.md) | Extension VS Code — sidebar état projet + annotations inline | V1 |
+| 5.2 | [02-github-integration.md](02-github-integration.md) | GitHub/GitLab webhooks — PR merged → tâche DONE, CI failed → alerte | V1 |
+| 5.3 | [03-team-onboarding.md](03-team-onboarding.md) | `workflow onboard` — onboarding instantané nouveau développeur | V1 |
+| 5.4 | [04-conflict-resolution.md](04-conflict-resolution.md) | Détection et résolution de conflits de décisions entre développeurs | V1 |
 
-## Notes
+## Critères de Sortie de Phase
 
-- **Telegram** : Utile pour les notifications ("tâche X terminée") et les confirmations rapides. L'interaction code doit rester en CLI — Telegram n'est pas adapté à la revue de code.
-- **REST API** : Permet d'intégrer Workflow dans des éditeurs ou outils sans support MCP.
-- **CLI Ink** : Migration progressive depuis readline — même interface, meilleure UX.
-- **Pipe CLI** : Permet d'utiliser Workflow dans des scripts CI/CD.
+- [ ] L'extension VS Code affiche l'état du projet en sidebar
+- [ ] Les fichiers en cours de tâche sont annotés inline dans VS Code
+- [ ] Une PR mergée sur GitHub marque automatiquement la tâche correspondante comme DONE
+- [ ] Un CI qui casse crée une notification + analyse automatique
+- [ ] `workflow onboard` permet à un nouveau dev d'être autonome en < 1 minute
+- [ ] Un conflit de décision entre deux devs est détecté et bloque la tâche concernée
+
+## Notes Stratégiques
+
+La VS Code extension est la priorité absolue de cette phase. C'est l'interface où le développeur passe 8h/jour. Workflow dans la sidebar devient aussi naturel que l'explorateur de fichiers — c'est ce qui crée l'addiction.
+
+L'intégration GitHub est le deuxième vecteur d'adoption : quand Workflow sait automatiquement qu'une PR est mergée, le développeur n'a jamais besoin de mettre à jour manuellement l'état d'avancement.

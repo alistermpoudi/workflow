@@ -40,6 +40,12 @@ export class FileSystem {
     techStack: () => join(this.workflowDir, 'tech-stack.json'),
     codeIndex: () => join(this.workflowDir, 'code-index.json'),
     decisionsLog: () => join(this.workflowDir, 'decisions.log'),
+    decisionsGraph: () => join(this.workflowDir, 'decisions-graph.json'),
+    failurePatterns: () => join(this.workflowDir, 'failure-patterns.json'),
+    questionsDir: () => join(this.workflowDir, 'questions'),
+    briefingsDir: () => join(this.workflowDir, 'briefings'),
+    questionFile: (name) => join(this.workflowDir, 'questions', name),
+    briefingFile: (date) => join(this.workflowDir, 'briefings', `${date}.md`),
     versionDir: (v) => join(this.workflowDir, 'versions', v),
     versionMeta: (v) => join(this.workflowDir, 'versions', v, 'meta.json'),
     versionProgress: (v) => join(this.workflowDir, 'versions', v, 'progress.json'),
@@ -51,6 +57,18 @@ export class FileSystem {
   async init() {
     await mkdir(this.workflowDir, { recursive: true });
     await mkdir(join(this.workflowDir, 'versions'), { recursive: true });
+    await mkdir(this.paths.questionsDir(), { recursive: true });
+    await mkdir(this.paths.briefingsDir(), { recursive: true });
+  }
+
+  // Vérifier si un fichier ou dossier existe (utilisé par SyncChecker.checkPreconditions)
+  async exists(filePath) {
+    try {
+      await access(filePath, constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // Vérifier si .workflow/ existe
@@ -151,9 +169,12 @@ export class FileSystem {
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| 1 | `init()` crée la structure `.workflow/versions/` | ⬜ |
+| 1 | `init()` crée la structure `.workflow/versions/`, `questions/` et `briefings/` | ⬜ |
 | 2 | `readJSON` retourne `null` pour un fichier absent (pas d'exception) | ⬜ |
 | 3 | `writeJSON` est atomique (passe par un fichier `.tmp`) | ⬜ |
 | 4 | `readSelective` lit plusieurs fichiers en parallèle | ⬜ |
 | 5 | `listTaskIds` retourne les IDs triés | ⬜ |
-| 6 | Tests unitaires couvrent les cas normaux et les fichiers absents | ⬜ |
+| 6 | `exists()` retourne `true` pour un fichier présent, `false` pour un absent | ⬜ |
+| 7 | `paths.failurePatterns()` pointe vers `.workflow/failure-patterns.json` | ⬜ |
+| 8 | `paths.questionsDir()` et `paths.briefingsDir()` existent dans `paths` | ⬜ |
+| 9 | Tests unitaires couvrent les cas normaux et les fichiers absents | ⬜ |

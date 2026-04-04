@@ -22,13 +22,16 @@ import { ProjectMemory } from '../core/ProjectMemory.js';
 import { TaskManager } from '../tools/TaskManager.js';
 import { ContextManager } from '../core/ContextManager.js';
 import { DecisionsLog } from '../core/DecisionsLog.js';
+import { SyncChecker } from '../core/SyncChecker.js';
 
 export class ExecutionPhase {
   constructor(projectRoot, llm, io) {
+    this.projectRoot = projectRoot;
     this.memory = new ProjectMemory(projectRoot);
     this.tasks = new TaskManager(projectRoot);
     this.context = new ContextManager(projectRoot);
     this.decisions = new DecisionsLog(projectRoot);
+    this.sync = new SyncChecker(projectRoot); // Pour checkPreconditions
     this.llm = llm;
     this.io = io;
     this.executionLoop = null; // Injecté en Phase 3
@@ -58,11 +61,24 @@ export class ExecutionPhase {
   async executeTask(version, task) {
     this.io.display(`\n🔄 Tâche en cours : ${task.id} — ${task.title}`);
 
+    // Vérifier les préconditions déclaratives AVANT de démarrer
+    const preconditionCheck = await this.sync.checkPreconditions(task, version);
+    if (!preconditionCheck.met) {
+      this.io.warn(`Préconditions non satisfaites pour ${task.id} :`);
+      preconditionCheck.failures.forEach(f => this.io.warn(`  • ${f}`));
+      return { completed: false };
+    }
+
     // Marquer en cours
     await this.tasks.markInProgress(version, task.id);
 
-    // Charger le contexte de niveau 3
+    // Charger le contexte de niveau 3 (inclut scoring de pertinence des décisions)
     const ctx = await this.context.buildLLMContext({ version, taskId: task.id });
+
+    // Afficher l'intent avant les décisions (guide l'implémentation)
+    if (ctx.task?.task?.intent) {
+      this.io.display(`\n💡 Intent : ${ctx.task.task.intent}`);
+    }
 
     // Consulter decisions.log avant de coder
     if (ctx.task.relevantDecisions.length > 0) {
@@ -71,6 +87,7 @@ export class ExecutionPhase {
     }
 
     // Déléguer à ExecutionLoop (Phase 3)
+    // ExecutionLoop consultera FailurePatterns avant chaque génération de code
     if (!this.executionLoop) {
       // Stub pour Phase 2 — sera remplacé en Phase 3
       this.io.display('[ExecutionLoop non encore implémenté — Phase 3]');
@@ -116,7 +133,10 @@ export class ExecutionPhase {
 | # | Critère | Vérifié |
 |---|---------|---------|
 | 1 | `run()` prend la prochaine tâche en attente automatiquement | ⬜ |
-| 2 | `run()` affiche les décisions pertinentes avant d'exécuter | ⬜ |
-| 3 | `run()` gère les 4 actions d'escalade (skip/retry/split/abort) | ⬜ |
-| 4 | Les décisions retournées par `ExecutionLoop` sont enregistrées dans `decisions.log` | ⬜ |
-| 5 | `run()` retourne `{ completed: true, versionDone: true }` si plus aucune tâche | ⬜ |
+| 2 | `executeTask()` vérifie les préconditions via `SyncChecker.checkPreconditions()` avant de démarrer | ⬜ |
+| 3 | `executeTask()` bloque avec message explicite si une précondition échoue | ⬜ |
+| 4 | `executeTask()` affiche l'intent de la tâche avant les décisions pertinentes | ⬜ |
+| 5 | `run()` affiche les décisions pertinentes (scorées) avant d'exécuter | ⬜ |
+| 6 | `run()` gère les 4 actions d'escalade (skip/retry/split/abort) | ⬜ |
+| 7 | Les décisions retournées par `ExecutionLoop` sont enregistrées dans `decisions.log` | ⬜ |
+| 8 | `run()` retourne `{ completed: true, versionDone: true }` si plus aucune tâche | ⬜ |

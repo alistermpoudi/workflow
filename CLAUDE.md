@@ -20,6 +20,14 @@ Les agents de code actuels (Claude Code, Cursor, Codex, etc.) souffrent d'un dé
 
 Toute la connaissance projet est persistée dans des fichiers structurés dans un dossier `.workflow/` à la racine du projet cible. Au démarrage de chaque session, Workflow lit ces fichiers et sait exactement où il en est — sans aucune réexplication.
 
+### Les 5 Piliers de l'Indispensabilité
+
+1. **Daemon Heartbeat** — tourne en arrière-plan, envoie un briefing matin, surveille les builds, propose la prochaine tâche automatiquement
+2. **Présence partout** — CLI, Telegram, VS Code extension (sidebar + annotations inline), GitHub integration
+3. **Cerveau d'équipe** — `.workflow/` partagé via git, `workflow onboard` pour onboarding instantané des nouveaux devs, détection de conflits de décisions entre devs
+4. **Source de vérité unique** — `workflow doc generate` (README + ARCHITECTURE.md + CHANGELOG auto), `workflow audit` (divergence code/tâches), `workflow estimate` (basé sur temps réel par tâche)
+5. **Écosystème** — WorkflowLibrary cross-projet, workflow-hub (marketplace de patterns communautaire)
+
 ---
 
 ## 🏗️ Deux Modes d'Existence
@@ -51,7 +59,9 @@ workflow/
 │   │   ├── DecisionsLog.js         # Journal actif — consulté avant chaque tâche
 │   │   ├── ContextManager.js       # Hiérarchie de chargement contexte LLM
 │   │   ├── PhaseManager.js         # Orchestre les 5 phases
-│   │   └── SyncChecker.js          # State drift + vérif branche Git
+│   │   ├── SyncChecker.js          # State drift + vérif branche Git
+│   │   ├── DaemonHeartbeat.js      # Daemon proactif (briefing + surveillance)
+│   │   └── WatchMode.js            # Annotation passive (questions sans interruption)
 │   │
 │   ├── phases/             # Les 5 phases projet
 │   │   ├── DiscoveryPhase.js       # Phase 1 : questions ciblées → vision.md
@@ -73,7 +83,9 @@ workflow/
 │   │   ├── TelegramBot.js          # Bot Telegram (v2)
 │   │   ├── MCPServer.js            # Workflow Core — validation allowed_commands
 │   │   ├── RestAPI.js              # API REST locale (v2)
-│   │   └── PipeCLI.js              # CLI pipe (v2)
+│   │   ├── PipeCLI.js              # CLI pipe (v2)
+│   │   ├── VSCodeExtension/        # Extension VS Code (sidebar + annotations inline)
+│   │   └── GitHubIntegration.js    # Webhooks GitHub/GitLab
 │   │
 │   └── llm/                # Abstraction LLM
 │       ├── LLMProvider.js          # Multi-LLM (Claude par défaut)
@@ -126,21 +138,25 @@ workflow/
 | Fichiers projet | Markdown + JSON | Lisibles par humain ET machine |
 | Config | `workflow.config.js` (JS/YAML) | Flexible |
 | Tests | Vitest | Rapide, ESM natif |
+| Watcher fichiers | `chokidar` | WatchMode — surveillance modifications |
+| VS Code | `@vscode/extension-api` | Extension sidebar + annotations inline |
+| GitHub | `@octokit/rest` | Webhooks + sync PR/issues |
 
 ---
 
-## 📋 Les 7 Phases de Build
+## 📋 Les 8 Phases de Build
 
 | Phase | Nom | Scope | Roadmap cible |
 |-------|-----|-------|---------------|
 | 0 | Vision & Architecture | Documentation | ✅ Complété |
 | 1 | Foundation | `ProjectMemory`, `DecisionsLog`, `SyncChecker`, `TaskManager`, `FileSystem`, `GitManager` | MVP |
 | 2 | Les 5 Phases Projet | `DiscoveryPhase` → `ExecutionPhase` + `PhaseManager` | MVP |
-| 3 | Exécution de Base | `ExecutionLoop` (build_validate + 3 retries), CLI readline | MVP |
+| 3 | Exécution de Base | `ExecutionLoop`, CLI readline, `DaemonHeartbeat`, `WatchMode` | MVP |
 | 4 | MCP Server (Workflow Core) | `MCPServer.js` — tous les outils MCP exposés | MVP |
-| 5 | Versioning & Git | `VersionManager` + `GitManager` complets, commandes `workflow version` | V1 |
-| 6 | Robustesse | `CodePatcher` (diffs + AST), `CodeIndexer` (ripgrep), `ContextManager` fin | V1.5 |
-| 7 | Interfaces supplémentaires | Telegram, REST API, CLI Ink, pipe | V2 |
+| 5 | Présence & Intégrations | VS Code Extension, GitHub Integration, Team Onboarding | V1 |
+| 6 | Robustesse | `CodePatcher`, `CodeIndexer`, `ContextManager` avancé, `WorkflowLibrary` | V1.5 |
+| 7 | Génération & Audit | `workflow doc generate`, `workflow audit`, `workflow estimate` | V2 |
+| 8 | Écosystème | Telegram, REST API, CLI Ink, workflow-hub (marketplace) | V3 |
 
 ---
 
@@ -246,6 +262,18 @@ SyncChecker au démarrage :
 4. Annonce l'état exact et demande confirmation avant de reprendre
 ```
 
+### 9. Le Daemon est Toujours Présent
+
+`DaemonHeartbeat` tourne en arrière-plan (launchd/systemd). Il envoie un briefing au démarrage de la journée, surveille les builds CI, et propose la prochaine tâche quand une est terminée. Il ne bloque jamais l'utilisateur.
+
+### 10. Watch Mode — Annotation Sans Interruption
+
+`WatchMode` observe les fichiers du projet. Quand un fichier est créé/modifié hors du scope d'une tâche, il crée un fichier question dans `.workflow/questions/`. L'utilisateur répond en éditant le fichier (oui/non/plus-tard). Zéro interruption.
+
+### 11. `workflow onboard` — Onboarding Instantané
+
+Un nouveau développeur sur le projet lance `workflow onboard`. Workflow lit tout le `.workflow/` et génère : résumé du projet, stack expliquée avec raisons, état d'avancement, les 5 décisions clés à connaître, première tâche suggérée. Objectif : autonomie en 30 secondes.
+
 ---
 
 ## 🔗 Dépendances Entre Phases de Build
@@ -260,18 +288,21 @@ Phase 1 (Foundation — ProjectMemory, DecisionsLog, SyncChecker, TaskManager)
 Phase 2 (Les 5 Phases Projet — Discovery → Execution)
          │
          ▼
-Phase 3 (Exécution de Base — ExecutionLoop, CLI readline)
+Phase 3 (Exécution de Base — ExecutionLoop, CLI readline, DaemonHeartbeat, WatchMode)
          │
          ▼
 Phase 4 (MCP Server — Workflow Core complet)
          │
          ▼
-Phase 5 (Versioning & Git — VersionManager complet)
+Phase 5 (Présence & Intégrations — VS Code, GitHub, Onboarding)
+         │
+         ▼
+Phase 6 (Robustesse — CodePatcher, CodeIndexer, WorkflowLibrary)
          │
     ┌────┴────┐
     ▼         ▼
-Phase 6    Phase 7
-(Robustesse) (Interfaces)
+Phase 7    Phase 8
+(Génération & Audit)  (Écosystème)
 ```
 
 ---
@@ -315,6 +346,12 @@ workflow_search_codebase(query)
 workflow_mark_task_done(taskId)
 workflow_mark_task_failed(taskId, reason)
 workflow_log_decision(taskId, decision, reason)
+
+── Génération & Audit ────────────────────────────────────────
+workflow_doc_generate()
+workflow_audit()
+workflow_estimate(version)
+workflow_onboard()
 ```
 
 ---
@@ -324,32 +361,34 @@ workflow_log_decision(taskId, decision, reason)
 ### MVP — Workflow Core + CLI de base
 - Phase 1 : Foundation complète (ProjectMemory, DecisionsLog, SyncChecker)
 - Phase 2 : Les 5 phases projet (génération des fichiers `.workflow/`)
-- Phase 3 : ExecutionLoop basique (build_validate + 3 retries + escalade)
+- Phase 3 : ExecutionLoop basique (build_validate + 3 retries + escalade) + DaemonHeartbeat + WatchMode
 - Phase 4 : MCP Server complet (branché sur Claude Code immédiatement)
 - CLI readline simple pour interagir sans MCP
 
-### V1 — Workflow Agent complet
-- Phase 5 : Versioning Git complet (create, switch, complete, hotfix)
-- CLI interactive enrichie
-- `decisions.log` actif avec consultation automatique
-- Reprise après context overflow robuste
+### V1 — Présence & Intégrations
+- Phase 5 : VS Code Extension (sidebar + annotations inline)
+- Phase 5 : GitHub/GitLab Integration (PR merged → tâche DONE, CI failed → alerte)
+- Phase 5 : `workflow onboard` — onboarding instantané nouveau développeur
+- Phase 5 : Détection et résolution de conflits de décisions entre devs
 
 ### V1.5 — Robustesse
 - Phase 6 : `CodePatcher` (diffs chirurgicaux + fallback AST tree-sitter)
 - Phase 6 : `CodeIndexer` (index JSON + variantes LLM + ripgrep)
+- Phase 6 : `WorkflowLibrary` (cross-project learning)
 - `ContextManager` fin (chargement sélectif avancé)
 
-### V2 — Workflow Partout
-- Phase 7 : Bot Telegram (notifications + interactions)
-- Phase 7 : API REST locale
-- Phase 7 : CLI Ink (React terminal)
-- Phase 7 : CLI pipe
-- Git auto-commit par tâche terminée
+### V2 — Génération & Audit
+- Phase 7 : `workflow doc generate` (README + ARCHITECTURE.md + CHANGELOG auto)
+- Phase 7 : `workflow audit` (divergence code/tâches)
+- Phase 7 : `workflow estimate` (estimation basée sur historique réel)
+- Phase 7 : Tests end-to-end sur cycle complet
 
-### V3 — Workflow Sync
+### V3 — Écosystème
+- Phase 8 : Bot Telegram (notifications + interactions)
+- Phase 8 : API REST locale
+- Phase 8 : CLI Ink (React terminal)
+- Phase 8 : workflow-hub (marketplace de patterns communautaire)
 - Protocole `workflow-sync` pour partager `.workflow/` en ligne
-- Import/export local ↔ serveur léger
-- Base pour un futur Workflow Hub
 
 ---
 

@@ -25,6 +25,27 @@ Niveau 4 — On-demand   : uniquement si nécessaire (CodeIndexer — Phase 6)
 
 **Ne jamais charger le niveau 4 en "contexte de base". Ne jamais tout charger d'un coup.**
 
+## Scoring de Pertinence
+
+Le `ContextManager` ne charge pas les décisions de façon mécanique (ex: "les 5 dernières"). Il leur attribue un **score de pertinence** par rapport à la tâche courante. Seules les décisions avec score > seuil sont incluses dans le contexte LLM.
+
+```
+Score(décision, tâche) =
+  similarité_mots_clés(décision.summary, tâche.title + tâche.intent)  [0–1]
+  × poids_récence(décision.date)           [0.5 | 0.8 | 1.0]
+  × poids_scope(décision.scope, tâche)     [0.3 | 0.8 | 1.0]
+    — global → 1.0
+    — scope local présent dans tâche.context → 0.8
+    — scope local absent de tâche.context → 0.3
+  × (décision.confidence === 'HIGH' ? 1.0 : 0.7)
+```
+
+**Budget tokens** : Le `ContextManager` maintient un budget (défaut : 2000 tokens pour les décisions). Les décisions sont triées par score décroissant et chargées jusqu'à épuisement du budget. Idem pour les fichiers source.
+
+**Seuil** : Score minimum `0.4` — en dessous, la décision n'est pas chargée même si le budget le permet.
+
+Cette approche remplace le keyword matching statique de `DecisionsLog.getRelevant()` pour le niveau 3.
+
 ## Implémentation
 
 ```javascript
@@ -98,14 +119,76 @@ export class ContextManager {
     // Lire sélectivement les fichiers mentionnés dans la tâche
     const relevantFiles = await this.fs.readSelective(task.filesToModify ?? []);
 
-    // 5 dernières décisions pertinentes
-    const relevantDecisions = await this.decisions.getRelevant(task);
+    // Décisions scorées par pertinence (remplace le keyword matching statique)
+    const relevantDecisions = await this._loadScoredDecisions(task);
 
     return {
       task,
       relevantFiles,
       relevantDecisions,
     };
+  }
+
+  // Charger les décisions avec scoring de pertinence
+  // Dépend de DecisionsLog.getAll() — méthode qui retourne toutes les entrées parsées
+  async _loadScoredDecisions(task, options = {}) {
+    const tokenBudget = options.tokenBudget ?? 2000;
+    const minScore = options.minScore ?? 0.4;
+
+    const allDecisions = await this.decisions.getAll();
+    if (!allDecisions.length) return [];
+
+    // Scorer chaque décision
+    const scored = allDecisions.map(d => ({
+      ...d,
+      score: this._scoreDecision(d, task),
+    }));
+
+    // Trier par score décroissant, filtrer sous le seuil
+    const filtered = scored
+      .filter(d => d.score >= minScore)
+      .sort((a, b) => b.score - a.score);
+
+    // Appliquer le budget tokens (approximation : ~4 chars/token)
+    const result = [];
+    let usedTokens = 0;
+    for (const d of filtered) {
+      const tokens = Math.ceil(d.raw.length / 4);
+      if (usedTokens + tokens > tokenBudget) break;
+      result.push(d);
+      usedTokens += tokens;
+    }
+    return result;
+  }
+
+  // Calculer le score de pertinence d'une décision par rapport à une tâche
+  // Formule : similarity × recencyWeight × scopeWeight × confidenceWeight
+  _scoreDecision(decision, task) {
+    const searchText = `${task.title} ${task.intent ?? ''} ${task.context ?? ''}`.toLowerCase();
+    const decisionText = decision.summary.toLowerCase();
+
+    // Similarité mots-clés (Jaccard simplifié)
+    const taskWords = new Set(searchText.split(/\W+/).filter(w => w.length > 3));
+    const decWords = new Set(decisionText.split(/\W+/).filter(w => w.length > 3));
+    const intersection = [...taskWords].filter(w => decWords.has(w)).length;
+    const union = new Set([...taskWords, ...decWords]).size;
+    const similarity = union > 0 ? intersection / union : 0;
+
+    // Récence (décisions < 7 jours = 1.0, < 30 jours = 0.8, plus ancien = 0.5)
+    const ageMs = Date.now() - new Date(decision.date).getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    const recencyWeight = ageDays < 7 ? 1.0 : ageDays < 30 ? 0.8 : 0.5;
+
+    // Scope : une décision "global" s'applique à tout, une décision "local" seulement si
+    // la tâche est dans le même module
+    const scopeWeight = !decision.scope || decision.scope === 'global' ? 1.0
+      : task.context?.toLowerCase().includes(decision.scope.toLowerCase()) ? 0.8
+      : 0.3;
+
+    // Confiance
+    const confidenceWeight = decision.confidence === 'HIGH' ? 1.0 : 0.7;
+
+    return similarity * recencyWeight * scopeWeight * confidenceWeight;
   }
 
   // Construire le contexte complet pour un appel LLM
@@ -144,4 +227,8 @@ export class ContextManager {
 | 3 | `getTaskContext()` lit sélectivement les fichiers listés dans la tâche | ⬜ |
 | 4 | `buildLLMContext({ version })` ne charge pas le niveau tâche si pas demandé | ⬜ |
 | 5 | `invalidateCache()` force un rechargement complet | ⬜ |
-| 6 | Tests unitaires vérifient que les niveaux sont chargés indépendamment | ⬜ |
+| 6 | `_scoreDecision()` retourne un score plus élevé pour une décision avec mots-clés communs | ⬜ |
+| 6b | `_scoreDecision()` applique `scopeWeight=1.0` pour scope "global", `0.3` pour scope local non-correspondant | ⬜ |
+| 7 | `_loadScoredDecisions()` respecte le budget tokens (ne dépasse pas 2000 tokens) | ⬜ |
+| 8 | `_loadScoredDecisions()` exclut les décisions avec score < 0.4 | ⬜ |
+| 9 | Tests unitaires vérifient que les niveaux sont chargés indépendamment | ⬜ |

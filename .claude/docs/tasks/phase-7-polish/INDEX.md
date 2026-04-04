@@ -1,19 +1,28 @@
-# Phase 7 — Polish (V2+)
+# Phase 7 — Génération & Audit (V2)
 
 ## Objectif
 
-Tests, documentation, et Workflow Sync (protocole de partage).
+Faire de Workflow la source de vérité absolue du projet — capable de générer automatiquement la documentation, détecter les divergences entre code et plan, et estimer les versions futures sur base de l'historique réel.
+
+## Dépendances
+
+- Phase 5 (Présence & Intégrations) complète ✅
 
 ## Tâches
 
 | Tâche | Fichier | Description |
 |-------|---------|-------------|
-| 7.1 | [01-tests-e2e.md](01-tests-e2e.md) | Tests end-to-end sur un projet exemple complet |
-| 7.2 | [02-documentation.md](02-documentation.md) | Documentation utilisateur + README + exemples |
-| 7.3 | [03-workflow-sync.md](03-workflow-sync.md) | Protocole `workflow-sync` — partage `.workflow/` en ligne (V3) |
+| 7.1 | [01-doc-generate.md](01-doc-generate.md) | `workflow doc generate` — README + ARCHITECTURE.md + CHANGELOG auto |
+| 7.2 | [02-audit.md](02-audit.md) | `workflow audit` — détection divergences code/tâches |
+| 7.3 | [03-estimate.md](03-estimate.md) | `workflow estimate` — estimation basée sur historique réel |
+| 7.4 | [04-tests-e2e.md](04-tests-e2e.md) | Tests end-to-end sur cycle complet init → version complete |
 
-## Notes
+## Critères de Sortie de Phase
 
-- Les tests e2e doivent couvrir le cycle complet : `init` → 5 phases → `run` × N → `version complete`
-- La documentation doit inclure un guide "Getting Started" en 5 minutes avec un projet exemple
-- `workflow-sync` est la base pour un futur Workflow Hub (V4 — projet séparé)
+- [ ] `workflow doc generate` produit un README.md lisible depuis vision.md + features.json
+- [ ] `workflow doc generate` produit ARCHITECTURE.md depuis decisions-graph.json
+- [ ] `workflow doc generate` produit CHANGELOG.md depuis l'historique des versions
+- [ ] `workflow audit` détecte un fichier créé sans tâche associée
+- [ ] `workflow audit` détecte une dépendance dans package.json non déclarée dans tech-stack.json
+- [ ] `workflow estimate` produit une estimation cohérente basée sur les tâches passées
+- [ ] Tests e2e couvrent le cycle complet sur un projet exemple

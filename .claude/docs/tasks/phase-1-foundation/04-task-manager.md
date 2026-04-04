@@ -20,6 +20,26 @@ Voir `CLAUDE.md#format-des-tâches-auto-suffisantes` pour le format complet. Le 
 
 **Statuts possibles** : `⬜ EN ATTENTE` | `🔄 EN COURS` | `✅ TERMINÉ` | `❌ REPORTÉ`
 
+### Champ `Intent` — Le "Pourquoi Humain"
+
+Chaque tâche inclut une section `## Intent` distincte des critères d'acceptation. Elle capture **pourquoi l'utilisateur veut vraiment cette fonctionnalité** — informations qui guident les décisions d'implémentation quand les critères sont ambigus.
+
+```markdown
+## Intent
+L'utilisateur veut que les clients puissent s'inscrire seuls,
+SANS passer par un admin. Le flux email de confirmation est
+secondaire pour l'instant — ne pas bloquer l'inscription
+sur une vérification email non reçue.
+
+## Critères d'acceptation
+- [ ] POST /auth/register fonctionne
+- [ ] Email de confirmation envoyé (non-bloquant)
+```
+
+L'`intent` est injecté dans le prompt LLM **avant** les critères. Si deux implémentations respectent les critères mais l'une contredit l'intent, Workflow choisit l'autre.
+
+**Règle** : L'`intent` ne peut pas être vide sur une tâche ayant des critères d'acceptation définis. `ValidationPhase` l'exige lors de la génération.
+
 ## Implémentation
 
 ```javascript
@@ -96,10 +116,22 @@ export class TaskManager {
     const content = await this.fs.readMarkdown(this.fs.paths.taskFile(version, taskId));
     if (!content) return;
     const date = new Date().toISOString().split('T')[0];
-    const updated = content.replace(
-      /## Journal\n([\s\S]*?)\n## Statut/,
-      `## Journal\n$1[${date}] ${entry}\n\n## Statut`
-    );
+
+    // Remplacer "(vide — tâche jamais tentée)" par la première entrée, ou appender
+    let updated;
+    if (content.includes('(vide — tâche jamais tentée)')) {
+      updated = content.replace(
+        '(vide — tâche jamais tentée)',
+        `[${date}] ${entry}`
+      );
+    } else {
+      // Appender avant ## Statut (avec ou sans ligne vide avant)
+      updated = content.replace(
+        /(\n{1,2}## Statut)/,
+        `\n[${date}] ${entry}\n$1`
+      );
+    }
+
     await this.fs.writeMarkdown(this.fs.paths.taskFile(version, taskId), updated);
   }
 
@@ -141,6 +173,12 @@ export class TaskManager {
       .map(c => `- [ ] ${c}`)
       .join('\n') || '- [ ] À définir';
 
+    const preconditions = task.preconditions
+      ? Object.entries(task.preconditions)
+          .map(([k, v]) => `- ${k}: ${JSON.stringify(v)}`)
+          .join('\n')
+      : '(aucune)';
+
     return `# ${task.id} : ${task.title}
 ## Version : ${task.version}
 
@@ -149,6 +187,12 @@ ${task.context ?? '(à compléter)'}
 
 ## User Story
 ${task.userStory ?? '(à compléter)'}
+
+## Intent
+${task.intent ?? '(à compléter — pourquoi l\'utilisateur veut vraiment cette fonctionnalité)'}
+
+## Préconditions
+${preconditions}
 
 ## Dépendances
 ${deps}
@@ -173,12 +217,28 @@ ${task.status}
       const match = content.match(new RegExp(`## ${name}\n([\\s\\S]*?)(?=\n## |$)`));
       return match ? match[1].trim() : '';
     };
+    // Parser les préconditions (format "- clé: valeur")
+    const preconditionsRaw = getSection('Préconditions');
+    const preconditions = {};
+    if (preconditionsRaw && preconditionsRaw !== '(aucune)') {
+      for (const line of preconditionsRaw.split('\n').filter(l => l.startsWith('- '))) {
+        const [key, ...rest] = line.replace(/^- /, '').split(':');
+        try {
+          preconditions[key.trim()] = JSON.parse(rest.join(':').trim());
+        } catch {
+          preconditions[key.trim()] = rest.join(':').trim();
+        }
+      }
+    }
+
     return {
       id: taskId,
       version,
       title: content.match(/^# \S+ : (.+)/m)?.[1] ?? '',
       context: getSection('Contexte Projet'),
       userStory: getSection('User Story'),
+      intent: getSection('Intent'),
+      preconditions: Object.keys(preconditions).length > 0 ? preconditions : null,
       filesToModify: getSection('Fichiers à créer / modifier')
         .split('\n')
         .filter(l => l.startsWith('- '))
@@ -202,5 +262,10 @@ ${task.status}
 | 2 | `createTask` écrit le fichier Markdown ET met à jour `progress.json` | ⬜ |
 | 3 | `markDone` déplace l'ID de `pending` vers `done` | ⬜ |
 | 4 | `deferTask` ajoute une entrée dans le champ Journal du fichier | ⬜ |
-| 5 | `parseTaskFile` extrait correctement toutes les sections | ⬜ |
-| 6 | Tests unitaires couvrent le cycle complet d'une tâche | ⬜ |
+| 4b | `appendJournal` remplace correctement `(vide — tâche jamais tentée)` à la première entrée | ⬜ |
+| 4c | `appendJournal` appende correctement une 2ème entrée sous la première | ⬜ |
+| 4d | `appendJournal` fonctionne que `## Statut` soit précédé d'une ou deux lignes vides | ⬜ |
+| 5 | `parseTaskFile` extrait correctement toutes les sections dont `intent` et `preconditions` | ⬜ |
+| 6 | `renderTaskFile` inclut les sections `## Intent` ET `## Préconditions` dans le Markdown | ⬜ |
+| 7 | `parseTaskFile` retourne `preconditions: null` si la section est absente ou vide | ⬜ |
+| 8 | Tests unitaires couvrent le cycle complet d'une tâche | ⬜ |
