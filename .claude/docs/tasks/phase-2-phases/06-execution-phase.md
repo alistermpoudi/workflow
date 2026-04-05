@@ -114,6 +114,8 @@ export class ExecutionPhase {
         case 'skip':
           await this.tasks.deferTask(version, task.id, 'next', 'Sauté manuellement');
           break;
+        case 'retry':
+          return this.executeTask(version, task); // Relancer depuis zéro pour cette tâche
         case 'split':
           this.io.display('La tâche sera découpée en sous-tâches à la prochaine session.');
           break;

@@ -41,7 +41,7 @@ export class ProjectMemory {
       description: data.description,
       createdAt: new Date().toISOString(),
       currentVersion: null,
-      status: 'DISCOVERY', // DISCOVERY | SPECIFICATION | VALIDATION | ARCHITECTURE | ACTIVE
+      status: 'DISCOVERY', // DISCOVERY | SPECIFICATION | ARCHITECTURE | VALIDATION | ACTIVE
       lastSessionAt: new Date().toISOString(),
     };
     await this.fs.writeJSON(this.fs.paths.project(), project);
