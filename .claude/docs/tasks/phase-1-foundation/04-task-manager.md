@@ -179,6 +179,13 @@ export class TaskManager {
           .join('\n')
       : '(aucune)';
 
+    // Rendu du mockup UI — présent uniquement pour les tâches avec interface
+    const mockupSection = task.mockup?.screens?.length
+      ? task.mockup.screens
+          .map(s => `### Écran — ${s.name}\n${s.ascii}\n${s.notes ? `Style : ${s.notes}` : ''}`)
+          .join('\n\n')
+      : '(aucune interface — tâche backend / configuration)';
+
     return `# ${task.id} : ${task.title}
 ## Version : ${task.version}
 
@@ -202,6 +209,9 @@ ${files}
 
 ## Critères d'acceptation
 ${criteria}
+
+## Mockup UI
+${mockupSection}
 
 ## Journal
 (vide — tâche jamais tentée)
@@ -231,6 +241,27 @@ ${task.status}
       }
     }
 
+    // Parser les mockups (format "### Écran — NomÉcran\n[ascii]\nStyle : notes")
+    const mockupRaw = getSection('Mockup UI');
+    let mockup = null;
+    if (mockupRaw && !mockupRaw.startsWith('(aucune')) {
+      const screens = [];
+      const screenBlocks = mockupRaw.split(/\n(?=### Écran — )/);
+      for (const block of screenBlocks) {
+        const nameMatch = block.match(/^### Écran — (.+)/);
+        if (!nameMatch) continue;
+        const name = nameMatch[1].trim();
+        const rest = block.slice(block.indexOf('\n') + 1);
+        const styleMatch = rest.match(/\nStyle : (.+)$/m);
+        const notes = styleMatch?.[1]?.trim() ?? null;
+        const ascii = styleMatch
+          ? rest.slice(0, rest.lastIndexOf('\nStyle :')).trim()
+          : rest.trim();
+        screens.push({ name, ascii, notes });
+      }
+      if (screens.length > 0) mockup = { screens };
+    }
+
     return {
       id: taskId,
       version,
@@ -247,6 +278,7 @@ ${task.status}
         .split('\n')
         .filter(l => l.startsWith('- '))
         .map(l => l.replace(/^- \[.\] /, '')),
+      mockup,
       journal: getSection('Journal'),
       status: getSection('Statut'),
     };
@@ -269,3 +301,7 @@ ${task.status}
 | 6 | `renderTaskFile` inclut les sections `## Intent` ET `## Préconditions` dans le Markdown | ⬜ |
 | 7 | `parseTaskFile` retourne `preconditions: null` si la section est absente ou vide | ⬜ |
 | 8 | Tests unitaires couvrent le cycle complet d'une tâche | ⬜ |
+| 9 | `renderTaskFile` inclut la section `## Mockup UI` dans tous les fichiers générés | ⬜ |
+| 10 | Si `task.mockup` est null ou vide, la section affiche `(aucune interface — tâche backend / configuration)` | ⬜ |
+| 11 | `parseTaskFile` extrait correctement `mockup.screens[].name`, `.ascii`, `.notes` | ⬜ |
+| 12 | `parseTaskFile` retourne `mockup: null` si la section mockup commence par `(aucune` | ⬜ |

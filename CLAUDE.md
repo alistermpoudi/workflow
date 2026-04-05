@@ -107,6 +107,7 @@ workflow/
 ├── vision.md               # Vision produit (sortie Phase 1)
 ├── features.json           # Fonctionnalités validées (sortie Phase 2)
 ├── tech-stack.json         # Stack + build_validate + test + allowed_commands
+├── design.json             # Style visuel — style, couleurs, références, notes (sortie DiscoveryPhase)
 ├── code-index.json         # Index fonctions/classes/exports (mis à jour en continu)
 ├── decisions.log           # Journal actif des décisions techniques
 └── versions/
@@ -224,6 +225,14 @@ Application, stack, phase courante
 ## User Story
 EN TANT QUE / JE VEUX / AFIN DE
 
+## Intent
+Pourquoi l'utilisateur veut vraiment cette fonctionnalité — guide les décisions d'implémentation ambiguës.
+
+## Préconditions
+- filesExist: [...]
+- tasksCompleted: [...]
+- branch: "workflow/vX.Y"
+
 ## Dépendances
 - TASK-001 ✅
 - TASK-002 ✅
@@ -236,6 +245,17 @@ EN TANT QUE / JE VEUX / AFIN DE
 - [ ] Critère 1
 - [ ] Critère 2
 
+## Mockup UI
+
+### Écran — [Nom de l'écran]
+┌──────────────────────────────┐
+│  [contenu de l'écran]        │
+└──────────────────────────────┘
+Style : [style choisi] — [palette, typographie]
+
+[ou pour les tâches backend :]
+(aucune interface — tâche backend / configuration)
+
 ## Journal
 [date] Reportée depuis vX.X — raison : ...
 [date] Tentative partielle : fichier src/foo.js créé, manque ...
@@ -245,6 +265,7 @@ EN TANT QUE / JE VEUX / AFIN DE
 ```
 
 > **Le champ `Journal`** est rempli automatiquement par Workflow à chaque report ou tentative partielle.
+> **Le champ `Mockup UI`** est généré automatiquement par `ValidationPhase` en respectant le style de `design.json`. Toujours présent — `(aucune interface)` pour les tâches sans UI.
 
 ### 7. TASK-001 et TASK-002 sont Systématiques
 
@@ -273,6 +294,24 @@ SyncChecker au démarrage :
 ### 11. `workflow onboard` — Onboarding Instantané
 
 Un nouveau développeur sur le projet lance `workflow onboard`. Workflow lit tout le `.workflow/` et génère : résumé du projet, stack expliquée avec raisons, état d'avancement, les 5 décisions clés à connaître, première tâche suggérée. Objectif : autonomie en 30 secondes.
+
+### 12. Design Style — Capturé Dès la Discovery
+
+`DiscoveryPhase` demande obligatoirement le style de design souhaité (minimaliste, material, glassmorphism, néomorphisme, brutaliste, etc.) avant de terminer. Le choix est persisté dans `design.json`. `ValidationPhase` l'utilise pour générer des mockups ASCII dans chaque tâche impliquant une interface — **le développeur sait à quoi doit ressembler chaque écran avant même de coder**.
+
+Styles disponibles : Minimaliste · Material Design · Glassmorphism · Néomorphisme · Brutaliste · Doux/Pastel · Dashboard Pro · Mobile-First · Cyberpunk · Personnalisé.
+
+```json
+// design.json — exemple
+{
+  "style": "minimaliste",
+  "styleLabel": "Minimaliste",
+  "colorScheme": "clair",
+  "references": ["Linear", "Stripe"],
+  "customNotes": null,
+  "collectedAt": "2026-04-05T10:23:00Z"
+}
+```
 
 ---
 

@@ -42,6 +42,7 @@ export class FileSystem {
     decisionsLog: () => join(this.workflowDir, 'decisions.log'),
     decisionsGraph: () => join(this.workflowDir, 'decisions-graph.json'),
     failurePatterns: () => join(this.workflowDir, 'failure-patterns.json'),
+    design: () => join(this.workflowDir, 'design.json'),
     questionsDir: () => join(this.workflowDir, 'questions'),
     briefingsDir: () => join(this.workflowDir, 'briefings'),
     questionFile: (name) => join(this.workflowDir, 'questions', name),

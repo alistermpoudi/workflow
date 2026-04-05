@@ -141,6 +141,15 @@ export class ProjectMemory {
   async saveFailurePatterns(patterns) {
     await this.fs.writeJSON(this.fs.paths.failurePatterns(), patterns);
   }
+
+  // design.json — préférences visuelles collectées en DiscoveryPhase
+  // { style, colorScheme, mood, references, keywords, customNotes }
+  async getDesign() {
+    return this.fs.readJSON(this.fs.paths.design());
+  }
+  async saveDesign(design) {
+    await this.fs.writeJSON(this.fs.paths.design(), design);
+  }
 }
 ```
 
@@ -156,3 +165,5 @@ export class ProjectMemory {
 | 6 | Tests unitaires couvrent init + lecture + écriture | ⬜ |
 | 7 | `getLastSessionTimestamp()` retourne `null` si `lastSessionAt` est absent de `project.json` | ⬜ |
 | 8 | `initProject()` inclut `lastSessionAt` dans le schéma initial de `project.json` | ⬜ |
+| 9 | `getDesign()` retourne `null` si `design.json` n'existe pas encore | ⬜ |
+| 10 | `saveDesign()` persiste correctement les préférences visuelles dans `design.json` | ⬜ |

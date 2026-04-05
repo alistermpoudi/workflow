@@ -138,6 +138,9 @@ L'email de confirmation est secondaire — ne pas bloquer l'inscription dessus.
 - [ ] Middleware protège les routes avec Bearer token
 - [ ] Tests unitaires sur les deux endpoints
 
+## Mockup UI
+(aucune interface — tâche backend / configuration)
+
 ## Journal
 (vide — tâche jamais tentée)
 
@@ -145,9 +148,46 @@ L'email de confirmation est secondaire — ne pas bloquer l'inscription dessus.
 ⬜ EN ATTENTE
 ```
 
+Exemple de tâche avec interface (style minimaliste) :
+
+```markdown
+# TASK-007 : Page de connexion — UI
+## Version : v1.0
+
+...
+
+## Mockup UI
+
+### Écran — Login
+┌─────────────────────────────────────┐
+│                                     │
+│            ◆ TaskFlow               │
+│                                     │
+│   Email                             │
+│   ┌─────────────────────────────┐   │
+│   │ john@example.com            │   │
+│   └─────────────────────────────┘   │
+│                                     │
+│   Mot de passe                      │
+│   ┌─────────────────────────────┐   │
+│   │ ••••••••                    │   │
+│   └─────────────────────────────┘   │
+│                                     │
+│   ┌─────────────────────────────┐   │
+│   │       Se connecter          │   │
+│   └─────────────────────────────┘   │
+│                                     │
+│   Pas encore de compte ? S'inscrire │
+└─────────────────────────────────────┘
+Style : Minimaliste — fond blanc #FFFFFF, texte #111827, bouton primaire #3B82F6, police Inter
+
+...
+```
+
 > **Champ `Journal`** : Rempli automatiquement par Workflow à chaque report ou tentative partielle. Permet de savoir jusqu'où on est allé si la tâche a été interrompue.
 > **Champ `Intent`** : Capture le "pourquoi humain". Injecté dans les prompts LLM avant les critères. Ne peut pas être vide si des critères d'acceptation sont définis.
 > **Champ `Préconditions`** : Vérifié par `SyncChecker.checkPreconditions()` avant de démarrer la tâche. Généré automatiquement par `ValidationPhase`.
+> **Champ `Mockup UI`** : Présent dans toutes les tâches. Pour les tâches avec interface, contient un ou plusieurs écrans en ASCII art respectant le style défini dans `design.json`. Pour les tâches backend/configuration, affiche `(aucune interface — tâche backend / configuration)`. Généré automatiquement par `ValidationPhase`.
 
 ---
 
@@ -275,6 +315,7 @@ Exemples multi-stack :
 ├── vision.md
 ├── features.json
 ├── tech-stack.json
+├── design.json                # Préférences visuelles — style, couleurs, références, mockups
 ├── code-index.json
 ├── decisions.log              # Journal texte brut — lisible humain
 ├── decisions-graph.json       # Relations entre décisions (CONTRADICTS, DEPENDS_ON, SUPERSEDES, REFINES)

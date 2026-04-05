@@ -42,6 +42,9 @@ export class ValidationPhase {
     if (!features) throw new Error('features.json manquant — relancer SpecificationPhase');
     if (!techStack) throw new Error('tech-stack.json manquant — relancer ArchitecturePhase');
 
+    // Charger les préférences design (peut être null si projet sans UI)
+    this._design = await this.memory.getDesign();
+
     const versions = Object.keys(features);
 
     for (const version of versions) {
@@ -56,9 +59,33 @@ export class ValidationPhase {
 
     const existingIds = await this.tasks.getPendingTasks(version);
 
+    // Construire le contexte design pour le prompt (si disponible)
+    const designContext = this._design
+      ? `\n\nSTYLE DE DESIGN DU PROJET :
+Style : ${this._design.styleLabel} (${this._design.style})
+Thème : ${this._design.colorScheme}
+Références visuelles : ${this._design.references?.join(', ') || 'aucune'}
+${this._design.customNotes ? `Notes : ${this._design.customNotes}` : ''}
+
+Pour chaque tâche qui implique une interface (écran, composant, page, formulaire, liste, navigation),
+tu DOIS inclure un champ "mockup" dans le JSON. Ce mockup est en ASCII art et respecte le style ${this._design.styleLabel}.
+Format du champ mockup :
+{
+  "screens": [
+    {
+      "name": "Nom de l'écran",
+      "ascii": "┌──────────────────────────┐\\n│ [contenu]                │\\n└──────────────────────────┘",
+      "notes": "Description courte du style et des couleurs"
+    }
+  ]
+}
+Si la tâche n'a PAS d'interface (ex : tâche backend, setup, configuration), le champ "mockup" doit être null.`
+      : '';
+
     // Générer les tâches via LLM
     const prompt = PromptBuilder.generateTasks(version, features, techStack, existingIds)
-      + '\n\n' + GRANULARITY_RULE;
+      + '\n\n' + GRANULARITY_RULE
+      + designContext;
 
     const tasksJson = await this.llm.ask(prompt);
     let tasksList;
@@ -105,6 +132,8 @@ export class ValidationPhase {
           branch: `workflow/${version}`,
         };
       }
+      // Attacher le mockup UI si présent (généré par le LLM pour les tâches avec interface)
+      // taskData.mockup = { screens: [{ name, ascii, notes }] } | null
       await this.tasks.createTask(version, taskData);
     }
 
@@ -263,3 +292,7 @@ Justifie brièvement chaque choix. Retourne JSON + justifications séparées.`;
 | 8 | JSON.parse après corrections (Validation + Spec) lève une erreur explicite si réponse non-JSON | ⬜ |
 | 9 | `saveVersionMeta()` inclut `type: 'RELEASE'` — cohérent avec `VersionManager.create()` | ⬜ |
 | 10 | `ArchitecturePhase` : les deux `JSON.parse` (initial + corrections) lèvent une erreur explicite si non-JSON | ⬜ |
+| 11 | `ValidationPhase.run()` charge `design.json` en début d'exécution (peut être null) | ⬜ |
+| 12 | Si `design.json` est présent, le prompt de génération inclut le style + la consigne mockup | ⬜ |
+| 13 | Les tâches avec interface ont un champ `mockup` non-null ; les tâches backend ont `mockup: null` | ⬜ |
+| 14 | Le `mockup` est transmis à `createTask()` — il est persisté dans le `TASK-XXX.md` généré | ⬜ |

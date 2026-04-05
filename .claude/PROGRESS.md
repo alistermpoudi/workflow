@@ -58,7 +58,23 @@
 
 ## Dernière Session
 
-**Date** : 2026-04-04
+**Date** : 2026-04-05
+**Travail effectué** : Ajout du système de design style + mockups UI dans les tâches
+**Changements apportés** :
+- `design.json` ajouté à la structure `.workflow/` (FileSystem.paths.design())
+- `ProjectMemory.getDesign()` / `saveDesign()` — nouveaux accesseurs
+- `DiscoveryPhase._collectDesignPreferences()` — questionnaire design à la fin de la Discovery (10 styles proposés : minimaliste, material, glassmorphism, néomorphisme, brutaliste, doux/pastel, dashboard-pro, mobile-first, cyberpunk, personnalisé)
+- `ValidationPhase` — charge `design.json` et injecte la consigne mockup dans le prompt LLM de génération de tâches
+- `TaskManager.renderTaskFile()` — nouvelle section `## Mockup UI` dans tous les TASK-XXX.md
+- `TaskManager.parseTaskFile()` — parse la section `## Mockup UI` → `{ screens: [{ name, ascii, notes }] }`
+- `CLAUDE.md` + `00-vision.md` — format TASK et structure `.workflow/` mis à jour (concept 12 ajouté)
+**Arrêté à** : Spécification design + mockups complète. Prêt pour l'implémentation Phase 1.
+**Prochaine action** : Démarrer Phase 1 — Foundation — lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`
+
+---
+
+## Session 2026-04-04
+
 **Travail effectué** : Audits v3 + v4 — correction de tous les bugs identifiés dans la documentation
 **Bugs corrigés** :
 - **P0** Bug A : `WatchMode._applyAnswer()` implémentée (nouvelle méthode statique complète)
