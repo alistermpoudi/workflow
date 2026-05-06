@@ -48,48 +48,51 @@ Dans les deux cas : même cerveau, mêmes fichiers `.workflow/`, mêmes outils. 
 ```
 workflow/
 ├── CLAUDE.md               # CE FICHIER
-├── package.json
+├── pyproject.toml          # uv + hatchling + dépendances
+├── .python-version         # "3.12"
 ├── .gitignore
 │
 ├── src/
-│   ├── core/               # Cerveau — indépendant de l'interface
-│   │   ├── WorkflowAgent.js        # Orchestrateur principal (Agent mode)
-│   │   ├── ProjectMemory.js        # Lecture/écriture .workflow/
-│   │   ├── VersionManager.js       # Cycle de vie versions + pilote GitManager
-│   │   ├── DecisionsLog.js         # Journal actif — consulté avant chaque tâche
-│   │   ├── ContextManager.js       # Hiérarchie de chargement contexte LLM
-│   │   ├── PhaseManager.js         # Orchestre les 5 phases
-│   │   ├── SyncChecker.js          # State drift + vérif branche Git
-│   │   ├── DaemonHeartbeat.js      # Daemon proactif (briefing + surveillance)
-│   │   └── WatchMode.js            # Annotation passive (questions sans interruption)
-│   │
-│   ├── phases/             # Les 5 phases projet
-│   │   ├── DiscoveryPhase.js       # Phase 1 : questions ciblées → vision.md
-│   │   ├── SpecificationPhase.js   # Phase 2 : fonctionnalités → features.json
-│   │   ├── ValidationPhase.js      # Phase 3 : tâches détaillées → versions/
-│   │   ├── ArchitecturePhase.js    # Phase 4 : stack + TASK-001/002 + allowed_commands
-│   │   └── ExecutionPhase.js       # Phase 5 : code → validate → corriger → done
-│   │
-│   ├── tools/              # Outils techniques
-│   │   ├── CodePatcher.js          # Diffs chirurgicaux + fallback AST (v1.5)
-│   │   ├── CodeIndexer.js          # Index JSON + variantes LLM + ripgrep (v1.5)
-│   │   ├── ExecutionLoop.js        # build_validate générique → test → correction
-│   │   ├── FileSystem.js           # Opérations fichiers
-│   │   ├── GitManager.js           # Piloté par VersionManager
-│   │   └── TaskManager.js          # CRUD sur les fichiers de tâches
-│   │
-│   ├── interfaces/         # Couches d'interaction
-│   │   ├── CLI.js                  # Console interactive (readline + chalk)
-│   │   ├── TelegramBot.js          # Bot Telegram (v2)
-│   │   ├── MCPServer.js            # Workflow Core — validation allowed_commands
-│   │   ├── RestAPI.js              # API REST locale (v2)
-│   │   ├── PipeCLI.js              # CLI pipe (v2)
-│   │   ├── VSCodeExtension/        # Extension VS Code (sidebar + annotations inline)
-│   │   └── GitHubIntegration.js    # Webhooks GitHub/GitLab
-│   │
-│   └── llm/                # Abstraction LLM
-│       ├── LLMProvider.js          # Multi-LLM (Claude par défaut)
-│       └── PromptBuilder.js        # Prompts avec contexte projet injecté
+│   └── workflow/
+│       ├── core/               # Cerveau — indépendant de l'interface
+│       │   ├── workflow_agent.py       # Orchestrateur principal (Agent mode)
+│       │   ├── project_memory.py       # Lecture/écriture .workflow/
+│       │   ├── phase_manager.py        # Orchestre les 5 phases
+│       │   ├── decisions_log.py        # Journal actif (SQLite FTS5) — consulté avant chaque tâche
+│       │   ├── context_manager.py      # Hiérarchie de chargement contexte LLM
+│       │   ├── sync_checker.py         # State drift + vérif branche Git
+│       │   ├── skill_manager.py        # Skills réutilisables cross-projet (Hermes-inspired)
+│       │   ├── daemon_heartbeat.py     # Daemon proactif (briefing + surveillance)
+│       │   └── watch_mode.py           # Annotation passive (questions sans interruption)
+│       │
+│       ├── phases/             # Les 5 phases projet
+│       │   ├── discovery_phase.py      # Phase 1 : questions ciblées → vision.md + design.json
+│       │   ├── specification_phase.py  # Phase 2 : fonctionnalités → features.json
+│       │   ├── architecture_phase.py   # Phase 3 : stack + TASK-001/002 + allowed_commands
+│       │   ├── validation_phase.py     # Phase 4 : tâches détaillées → versions/
+│       │   └── execution_phase.py      # Phase 5 : code → validate → corriger → done
+│       │
+│       ├── tools/              # Outils techniques
+│       │   ├── execution_loop.py       # build_validate générique → test → correction (+ skill auto-create)
+│       │   ├── filesystem.py           # WorkflowPaths + opérations fichiers
+│       │   ├── git_manager.py          # asyncio.create_subprocess_exec
+│       │   ├── task_manager.py         # CRUD sur les fichiers TASK-XXX.md
+│       │   ├── version_manager.py      # Cycle de vie versions + pilote GitManager
+│       │   ├── code_patcher.py         # Diffs chirurgicaux + fallback AST (v1.5)
+│       │   ├── code_indexer.py         # Index JSON + variantes LLM + ripgrep (v1.5)
+│       │   └── workflow_library.py     # Patterns cross-projet (v1.5)
+│       │
+│       ├── interfaces/         # Couches d'interaction
+│       │   ├── cli.py                  # typer + rich + RichIO
+│       │   ├── mcp_server.py           # Workflow Core — Python mcp SDK (stdio)
+│       │   ├── telegram_bot.py         # Bot Telegram (v3)
+│       │   ├── rest_api.py             # API REST locale (v3)
+│       │   ├── github_integration.py   # Webhooks GitHub/GitLab
+│       │   └── vscode_extension/       # Extension VS Code — JavaScript/TypeScript (requis par VS Code)
+│       │
+│       └── llm/                # Abstraction LLM
+│           ├── llm_provider.py         # LiteLLM multi-modèles par rôle
+│           └── prompt_builder.py       # Prompts avec contexte projet injecté
 │
 └── .claude/
     ├── PROGRESS.md         # Suivi de progression — lire en début de session
@@ -128,20 +131,26 @@ workflow/
 
 | Composant | Choix | Raison |
 |-----------|-------|--------|
-| Runtime | Node.js | Écosystème riche, async natif |
-| LLM | Anthropic Claude API (claude-sonnet-4-6) | Meilleur pour le code, large context |
-| CLI MVP | `readline` + `chalk` | Simple, zéro overhead, débogable facilement |
-| CLI v1.5 | Ink (React terminal) | UI console riche après validation MVP |
-| Telegram | `node-telegram-bot-api` | Simple et stable (v2) |
-| MCP | `@modelcontextprotocol/sdk` | Standard officiel Anthropic |
-| Analyse AST | `tree-sitter` | Parsing multi-langage robuste (v1.5) |
+| Runtime | Python 3.12+ | Écosystème IA riche (LiteLLM, embeddings, tree-sitter) |
+| Package manager | `uv` | Rapide, lockfile, gestion Python version |
+| LLM | LiteLLM (multi-modèles par rôle) | Unifie Claude, DeepSeek, Llama, Mistral, Ollama... |
+| Modèles | Claude Opus (reasoning), DeepSeek Coder (code), Claude Haiku (fast) | Rôle optimal par tâche |
+| CLI | `typer` + `rich` | Commandes + affichage coloré (`RichIO`) |
+| MCP | `mcp` Python SDK (Anthropic officiel) | Transport stdio — Claude Code, Cursor |
+| Base de données | `aiosqlite` + SQLite FTS5 | DecisionsLog async avec recherche plein-texte |
+| Fichiers async | `aiofiles` + `pathlib` | Opérations non-bloquantes |
+| Analyse AST | `tree-sitter` Python | Parsing multi-langage robuste (v1.5) |
 | Recherche code | `ripgrep` (subprocess) | Plus fiable qu'un regex custom sur l'index JSON |
 | Fichiers projet | Markdown + JSON | Lisibles par humain ET machine |
-| Config | `workflow.config.js` (JS/YAML) | Flexible |
-| Tests | Vitest | Rapide, ESM natif |
-| Watcher fichiers | `chokidar` | WatchMode — surveillance modifications |
-| VS Code | `@vscode/extension-api` | Extension sidebar + annotations inline |
-| GitHub | `@octokit/rest` | Webhooks + sync PR/issues |
+| Config | `workflow.config.yaml` | Format YAML, lecture par `pyyaml` |
+| Tests | `pytest` + `pytest-asyncio` | Standard Python, async natif |
+| Linter | `ruff` | Linter + formatter ultra-rapide |
+| Watcher fichiers | `watchfiles` | WatchMode — surveillance modifications (remplace chokidar) |
+| Skills | `SkillManager` + SKILL.md | Hermes-inspired — accumulation d'expérience cross-projet |
+| VS Code | TypeScript (requis VS Code) | Extension sidebar + annotations inline |
+| GitHub | `httpx` + webhooks | Webhooks + sync PR/issues + Zero-to-PR |
+| Telegram | `python-telegram-bot` | Bot Telegram (v3) |
+| Parallel exec | `asyncio.gather` + `git worktree` | ParallelExecutor — tâches indépendantes en parallèle |
 
 ---
 
@@ -151,9 +160,9 @@ workflow/
 |-------|-----|-------|---------------|
 | 0 | Vision & Architecture | Documentation | ✅ Complété |
 | 1 | Foundation | `ProjectMemory`, `DecisionsLog`, `SyncChecker`, `TaskManager`, `FileSystem`, `GitManager` | MVP |
-| 2 | Les 5 Phases Projet | `DiscoveryPhase` → `ExecutionPhase` + `PhaseManager` | MVP |
-| 3 | Exécution de Base | `ExecutionLoop`, CLI readline, `DaemonHeartbeat`, `WatchMode` | MVP |
-| 4 | MCP Server (Workflow Core) | `MCPServer.js` — tous les outils MCP exposés | MVP |
+| 2 | Les 7 Phases Projet | `DiscoveryPhase` → `DesignSystemPhase` → `ExecutionPhase` + `PhaseManager` | MVP |
+| 3 | Exécution de Base | `ExecutionLoop` (TDD + Security + ArchReview + DepIntel), `ParallelExecutor`, CLI, Daemon, Watch | MVP |
+| 4 | MCP Server (Workflow Core) | `MCPServer.py` — tous les outils MCP exposés (Python mcp SDK) | MVP |
 | 5 | Présence & Intégrations | VS Code Extension, GitHub Integration, Team Onboarding | V1 |
 | 6 | Robustesse | `CodePatcher`, `CodeIndexer`, `ContextManager` avancé, `WorkflowLibrary` | V1.5 |
 | 7 | Génération & Audit | `workflow doc generate`, `workflow audit`, `workflow estimate` | V2 |
@@ -205,7 +214,7 @@ Si une tâche dépasse ces seuils, `ValidationPhase` la découpe automatiquement
 
 ### 4. `allowed_commands` — Sécurité MCP
 
-`MCPServer.js` **ne peut exécuter que les commandes listées** dans `tech-stack.json#allowed_commands`. Toute autre commande est rejetée et loggée. Aucune exception.
+`MCPServer.py` **ne peut exécuter que les commandes listées** dans `tech-stack.json#allowed_commands`. Toute autre commande est rejetée et loggée. Aucune exception.
 
 ### 5. Versioning Git — Règle "No Stash"
 
@@ -238,8 +247,8 @@ Pourquoi l'utilisateur veut vraiment cette fonctionnalité — guide les décisi
 - TASK-002 ✅
 
 ## Fichiers à créer / modifier
-- src/foo.js [CRÉER]
-- src/bar.js [MODIFIER]
+- src/workflow/foo.py [CRÉER]
+- src/workflow/bar.py [MODIFIER]
 
 ## Critères d'acceptation
 - [ ] Critère 1
@@ -258,7 +267,7 @@ Style : [style choisi] — [palette, typographie]
 
 ## Journal
 [date] Reportée depuis vX.X — raison : ...
-[date] Tentative partielle : fichier src/foo.js créé, manque ...
+[date] Tentative partielle : fichier src/workflow/foo.py créé, manque ...
 
 ## Statut
 ⬜ EN ATTENTE | 🔄 EN COURS | ✅ TERMINÉ | ❌ REPORTÉ

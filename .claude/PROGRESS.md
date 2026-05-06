@@ -2,9 +2,23 @@
 
 ## État Actuel
 
-**Phase courante** : Phase 0 — Vision & Architecture
-**Statut** : ✅ Documentation initiale créée
-**Prochaine étape** : Démarrer Phase 1 — Foundation
+**Phase courante** : Phase 1 — Foundation (prête à implémenter)
+**Statut** : ✅ Toutes les spécifications `.claude/docs/tasks/` mises à jour pour Python
+**Prochaine étape** : Implémenter Phase 1 — Foundation
+
+---
+
+## Décision Stratégique — Refonte Python (2026-05-02)
+
+Le projet a été refondu pour utiliser **Python 3.12+** à la place de Node.js, suite à l'analyse du projet Hermes (NousResearch). Raisons principales :
+
+1. **LiteLLM** — interface unifiée pour 100+ LLMs (Claude, DeepSeek, Llama, Ollama...) sans adapters custom
+2. **Modèles par rôle** — `reasoning` (Opus), `code_generation` (DeepSeek Coder), `fast` (Haiku), `compression` (Haiku)
+3. **SkillManager** (Hermes-inspired) — accumulation d'expérience cross-projet via SKILL.md
+4. **SQLite FTS5** — DecisionsLog robuste avec recherche plein-texte (remplace text file fragile)
+5. **Python mcp SDK** — MCP officiel Anthropic pour Python
+6. **`typer` + `rich`** — CLI propre avec `RichIO` injectable dans toutes les phases
+7. **Compression de contexte 3 phases** (Hermes-inspired) — précompression → protection head/tail → résumé LLM
 
 ---
 
@@ -13,100 +27,112 @@
 | Phase | Nom | Statut |
 |-------|-----|--------|
 | 0 | Vision & Architecture | ✅ Complété |
-| 1 | Foundation (ProjectMemory, DecisionsLog, SyncChecker) | ⬜ Non démarré |
-| 2 | Les 5 Phases Projet | ⬜ Non démarré |
-| 3 | Exécution de Base (ExecutionLoop, CLI, Daemon, Watch) | ⬜ Non démarré |
-| 4 | MCP Server (Workflow Core) | ⬜ Non démarré |
-| 5 | Présence & Intégrations (VS Code, GitHub, Onboarding) | ⬜ Non démarré |
-| 6 | Robustesse (CodePatcher, CodeIndexer, WorkflowLibrary) | ⬜ Non démarré |
-| 7 | Génération & Audit (doc, audit, estimate) | ⬜ Non démarré |
-| 8 | Écosystème (Telegram, REST, workflow-hub) | ⬜ Non démarré |
+| 1 | Foundation (ProjectMemory, DecisionsLog SQLite, SyncChecker, SkillManager) | 📋 Spécifié — prêt à coder |
+| 2 | Les 5 Phases Projet | 📋 Spécifié — prêt à coder |
+| 3 | Exécution de Base (ExecutionLoop, CLI typer+rich, Daemon, Watch) | 📋 Spécifié — prêt à coder |
+| 4 | MCP Server (Workflow Core) | 📋 Spécifié — prêt à coder |
+| 5 | Présence & Intégrations (VS Code, GitHub, Onboarding) | 📋 Spécifié |
+| 6 | Robustesse (CodePatcher, CodeIndexer, WorkflowLibrary) | 📋 Spécifié |
+| 7 | Génération & Audit (doc, audit, estimate) | 📋 Spécifié |
+| 8 | Écosystème (Telegram, REST, workflow-hub) | ⬜ Non spécifié |
 
 ---
 
 ## Phase 1 — Foundation
 
-**Tâches** :
+**Pour démarrer** : Lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`
 
 | Tâche | Description | Statut |
 |-------|-------------|--------|
-| 1.1 | Monorepo init — `package.json`, structure `src/`, config ESLint/Vitest | ⬜ |
-| 1.2 | `FileSystem.js` — opérations fichiers sur `.workflow/` | ⬜ |
-| 1.3 | `ProjectMemory.js` — CRUD `project.json`, `vision.md`, `features.json`, `tech-stack.json` | ⬜ |
-| 1.4 | `TaskManager.js` — CRUD `TASK-XXX.md` + `progress.json` | ⬜ |
-| 1.5 | `DecisionsLog.js` — écriture et lecture active du `decisions.log` | ⬜ |
-| 1.6 | `SyncChecker.js` — détection state drift + vérification branche Git | ⬜ |
-
-**Pour démarrer** : Lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`
+| 1.0 | `skill_manager.py` — système de skills cross-projet (SKILL.md) | ⬜ |
+| 1.1 | Monorepo init — `pyproject.toml`, structure `src/workflow/`, ruff, pytest | ⬜ |
+| 1.2 | `filesystem.py` — `WorkflowPaths` + opérations fichiers async | ⬜ |
+| 1.3 | `project_memory.py` — CRUD `project.json`, `vision.md`, `features.json`, `tech-stack.json`, `design.json` | ⬜ |
+| 1.4 | `task_manager.py` — CRUD `TASK-XXX.md` + `progress.json` | ⬜ |
+| 1.5 | `decisions_log.py` — SQLite FTS5, écriture et lecture active | ⬜ |
+| 1.6 | `sync_checker.py` + `git_manager.py` — state drift + vérification branche | ⬜ |
 
 ---
 
-## Décisions Techniques Prises
+## Phase 2 — Les 7 Phases Projet
+
+| Tâche | Description | Statut |
+|-------|-------------|--------|
+| 2.1 | `llm_provider.py` + `prompt_builder.py` — LiteLLM multi-modèles par rôle | ⬜ |
+| 2.2 | `context_manager.py` — hiérarchie + compression 3 phases | ⬜ |
+| 2.3 | `phase_manager.py` — DISCOVERY→**DESIGN**→SPECIFICATION→ARCHITECTURE→VALIDATION→ACTIVE | ⬜ |
+| 2.4 | `discovery_phase.py` + `specification_phase.py` | ⬜ |
+| 2.5 | `validation_phase.py` + `architecture_phase.py` | ⬜ |
+| 2.6 | `execution_phase.py` — sélection tâche + délégation à ExecutionLoop | ⬜ |
+| 2.7 | `design_system_phase.py` + `design_reviewer.py` — design system complet + review UI | ⬜ |
+
+---
+
+## Phase 3 — Exécution de Base
+
+| Tâche | Description | Statut |
+|-------|-------------|--------|
+| 3.1 | `execution_loop.py` — génère code, applique, valide, corrige (max 3 retries) + skill auto-create | ⬜ |
+| 3.2 | `cli.py` — typer + rich + `RichIO` | ⬜ |
+| 3.3 | `workflow_agent.py` — orchestrateur principal (Agent mode) | ⬜ |
+| 3.4 | `daemon_heartbeat.py` — subprocess.Popen start_new_session + briefing async | ⬜ |
+| 3.5 | `watch_mode.py` — `watchfiles.awatch` + fichiers questions | ⬜ |
+| 3.6 | `parallel_executor.py` — git worktrees + asyncio.gather + merge auto | ⬜ |
+| 3.7 | ExecutionLoop extensions — TDD + Security Review + Architecture Review + Dependency Intelligence | ⬜ |
+
+---
+
+## Phase 4 — MCP Server
+
+| Tâche | Description | Statut |
+|-------|-------------|--------|
+| 4.1 | `mcp_server.py` — Python mcp SDK, transport stdio, tous les outils | ⬜ |
+| 4.2 | `version_manager.py` + `git_manager.py` complet | ⬜ |
+
+---
+
+## Phase 5 — Présence & Intégrations (ajouts)
+
+| Tâche | Description | Statut |
+|-------|-------------|--------|
+| 5.5 | `zero_pr.py` — commit conventionnel + push + PR GitHub/GitLab auto | ⬜ |
+
+---
+
+## Phase 6 — Robustesse (ajouts)
+
+| Tâche | Description | Statut |
+|-------|-------------|--------|
+| 6.5 | `breaking_change_detector.py` — analyse impact + tests de régression pré-codage | ⬜ |
+
+---
+
+## Décisions Techniques (session 2026-05-02)
 
 | Date | Décision | Raison |
 |------|----------|--------|
-| 2026-03-31 | Commencer par Workflow Core (MCP) avant Workflow Agent | Chemin le plus court vers quelque chose d'utilisable — branché sur Claude Code immédiatement |
-| 2026-03-31 | CLI MVP avec readline + chalk (pas Ink) | Ink est lourd à déboguer ; garder pour v1.5 après validation MVP |
-| 2026-03-31 | Ripgrep subprocess pour CodeIndexer (pas regex custom) | Plus fiable sur de vrais projets |
-| 2026-04-03 | `decisions.log` (texte) + `decisions-graph.json` (relations) en parallèle | Log lisible humain + machine ; détection de contradictions possible sans parser le texte |
-| 2026-04-03 | Scoring de pertinence dans `ContextManager` (remplace keyword matching statique) | Évite de saturer le contexte avec des décisions non pertinentes sur les gros projets |
-| 2026-04-03 | Détection de boucle dans `ExecutionLoop` (80% de similarité entre erreurs) | Évite de brûler 3 tentatives LLM sur le même bug ; escalade plus tôt |
-| 2026-04-03 | `WorkflowLibrary` en Phase 6 (cross-project learning) | Capitaliser les patterns validés sans complexifier le MVP |
-| 2026-04-03 | Mode `workflow watch` (annotation passive par fichiers) | Capturer les décisions manuelles sans interrompre l'utilisateur |
+| 2026-05-02 | Python 3.12+ remplace Node.js | Écosystème IA plus riche (LiteLLM, embeddings, tree-sitter) |
+| 2026-05-02 | LiteLLM pour l'abstraction LLM | 100+ providers, fallback natif, modèle par rôle |
+| 2026-05-02 | Modèles par rôle (reasoning/code_generation/fast/compression) | Optimisation coût/qualité selon la tâche cognitive |
+| 2026-05-02 | SQLite FTS5 pour DecisionsLog | Recherche full-text robuste, WAL mode, remplacement du fichier texte fragile |
+| 2026-05-02 | SkillManager Hermes-inspired | Auto-accumulation d'expérience après retry réussi, zéro coût (SKILL.md local) |
+| 2026-05-02 | Compression contexte 3 phases (Hermes) | Évite la saturation sur sessions longues sans perdre les décisions critiques |
+| 2026-05-02 | `typer` + `rich` remplace readline + chalk | CLI idiomatique Python, `RichIO` injectable dans toutes les phases |
+| 2026-05-02 | `watchfiles` remplace chokidar | Python natif, async avec `awatch` |
 
 ---
 
 ## Dernière Session
 
-**Date** : 2026-04-05
-**Travail effectué** : Ajout du système de design style + mockups UI dans les tâches
-**Changements apportés** :
-- `design.json` ajouté à la structure `.workflow/` (FileSystem.paths.design())
-- `ProjectMemory.getDesign()` / `saveDesign()` — nouveaux accesseurs
-- `DiscoveryPhase._collectDesignPreferences()` — questionnaire design à la fin de la Discovery (10 styles proposés : minimaliste, material, glassmorphism, néomorphisme, brutaliste, doux/pastel, dashboard-pro, mobile-first, cyberpunk, personnalisé)
-- `ValidationPhase` — charge `design.json` et injecte la consigne mockup dans le prompt LLM de génération de tâches
-- `TaskManager.renderTaskFile()` — nouvelle section `## Mockup UI` dans tous les TASK-XXX.md
-- `TaskManager.parseTaskFile()` — parse la section `## Mockup UI` → `{ screens: [{ name, ascii, notes }] }`
-- `CLAUDE.md` + `00-vision.md` — format TASK et structure `.workflow/` mis à jour (concept 12 ajouté)
-**Arrêté à** : Spécification design + mockups complète. Prêt pour l'implémentation Phase 1.
-**Prochaine action** : Démarrer Phase 1 — Foundation — lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`
-
----
-
-## Session 2026-04-04
-
-**Travail effectué** : Audits v3 + v4 — correction de tous les bugs identifiés dans la documentation
-**Bugs corrigés** :
-- **P0** Bug A : `WatchMode._applyAnswer()` implémentée (nouvelle méthode statique complète)
-- **P0** P0-1 : `PHASE_ORDER` corrigé → ARCHITECTURE avant VALIDATION (tech-stack toujours disponible)
-- **P1** Bug B : `complete(opts)` propagé depuis MCPServer → WorkflowAgent → VersionManager (force: true fonctionnel)
-- **P1** Bug C : `WorkflowLibrary._renderPattern(task)` implémentée
-- **P1** Bug D : `GitManager.branchExists()` migré vers `runSafe()` (anti-injection)
-- **P1** Bug E : `WatchMode.processAnswers()` prend uniquement `projectRoot`, instancie ses deps en interne
-- **P2** Bug F : `DiscoveryPhase` passe les corrections au LLM (ne les perd plus)
-- **P2** Bug G : `injectFoundationTasks()` vérifie pending + done + failed (pas seulement pending)
-- **P2** Bug H : `JSON.parse` après corrections wrappé en try/catch dans Spec et Validation
-- **P3** P3-1 : Commentaires PhaseManager corrigés (Phase 3, pas Phase 6)
-- **P3** P3-2 : `DaemonHeartbeat._checkTaskCompletion()` implémentée avec comparaison d'état
-- **P3** P3-3 : `WorkflowLibrary._exists()` utilise `access()` au lieu de `readFile()`
-- **P1** Bug BB : `VersionManager.switch()` appelle `saveVersionMeta(..., ACTIVE)` — règle "1 ACTIVE à la fois" réellement enforced
-- **P2** Bug CC : `SyncChecker.check()` lit `meta.branch` — plus de faux BRANCH_MISMATCH sur les hotfixes
-- **P2** Bug DD : `WatchMode._detectNewImports()` lit `package.json#dependencies` (plus `tech-stack.json#dependencies` inexistant)
-- **P2** Bug EE : `WatchMode._onFileChanged()` implémentée — détecte les modifications sur fichiers de tâches terminées
-- **P3** Bug GG : Commentaires harmonisés (Phase 3 pour Daemon/Watch, Phase 5 pour GitHub)
-- Diagramme "États de Phase" dans PhaseManager mis à jour (ARCHITECTURE → VALIDATION)
-- **P1** Bug AAA : `VersionManager.create()` traite le cas post-ValidationPhase (meta.json existe, branche absente → crée seulement la branche)
-- **P2** Bug BBB : `processAnswers()` matche `oui|non` + `_applyAnswer()` gère la branche oui/non pour `modified_task_file`
-- **P2** Bug CCC : `DaemonHeartbeat.checkBriefing(projectRoot, io)` statique implémentée
-- **P3** Bug DDD : Dead code FileSystem supprimé de `_onFileChanged()`
-- **P3** Bug EEE : Déjà corrigé en v4 — confirmé ✅
-- **P2** Bug A : `DaemonHeartbeat._generateBriefing()` — guard `if (total === 0) return` (anti division par zéro)
-- **P2** Bug B : Handlers chokidar wrappés avec `.catch()` — plus d'UnhandledPromiseRejection
-- **P2** Bug C : `BRANCH_MISMATCH` appelle `versionManager.switch()` au lieu d'afficher la commande git
-- **P2** Bug D : `MANUAL_CHANGES` persiste réellement dans `progress.json` via `_persistManualChanges()` + actualise `lastSessionAt`
-- **P3** Bug E : `ValidationPhase` ajoute `type: 'RELEASE'` dans le meta — cohérent avec `VersionManager.create()`
-- **P1** Bug A : `SyncChecker.check()` retourne `activeVersion` dans `MANUAL_CHANGES` + `_persistManualChanges()` l'utilise correctement
-- **P2** Bug B : `ArchitecturePhase` — les deux `JSON.parse` wrappés en try/catch avec messages explicites
-- **P2** Bug A : Suppression du fallback `?? project.currentVersion` (ReferenceError si activeVersion est null)
-**Arrêté à** : Fin de l'audit v8 — spécifications Phase 1-4 complètes, cohérentes, et sans bug connu. Prêt pour l'implémentation.
-**Prochaine action** : Démarrer Phase 1 — Foundation — lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`
+**Date** : 2026-05-03
+**Travail effectué** : Ajout de 8 features game-changing dans les spécifications
+**Nouveaux fichiers de spec créés** :
+- `phase-2-phases/07-design-system.md` — `DesignSystemPhase` + `DesignReviewer` + `design-system.json` + `screen-flow.md` ✅
+- `phase-3-execution/06-parallel-executor.md` — `ParallelExecutor` git worktrees + asyncio.gather ✅
+- `phase-3-execution/07-execution-loop-extensions.md` — TDD + Security Review + Architecture Review + Dependency Intelligence ✅
+- `phase-5-mcp-interfaces/05-zero-to-pr.md` — `ZeroPR` commits conventionnels + PR GitHub/GitLab ✅
+- `phase-6-robustness/05-breaking-change-detector.md` — `BreakingChangeDetector` + tests de régression ✅
+**INDEX mis à jour** : phases 2, 3, 5, 6 ✅
+**CLAUDE.md** : stack + phases mis à jour ✅
+**Arrêté à** : Toutes les spécifications complètes. Prêt pour l'implémentation.
+**Prochaine action** : Démarrer Phase 1 — lire `.claude/docs/tasks/phase-1-foundation/INDEX.md`

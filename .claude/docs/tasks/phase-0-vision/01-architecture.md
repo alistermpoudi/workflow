@@ -2,47 +2,65 @@
 
 ## Vue d'Ensemble
 
-Workflow est une application Node.js structurée en couches clairement séparées. Le principe fondamental : **le core est indépendant de l'interface**. La même logique (`ProjectMemory`, `DecisionsLog`, `ExecutionLoop`) fonctionne en CLI, en MCP, en Telegram ou en API REST.
+Workflow est une application **Python 3.12+** structurée en couches clairement séparées. Le principe fondamental : **le core est indépendant de l'interface**. La même logique (`ProjectMemory`, `DecisionsLog`, `ExecutionLoop`) fonctionne en CLI, en MCP, en Telegram ou en API REST. Les interfaces non-Python (VS Code = TypeScript obligatoire) sont des **clients du protocole MCP**, pas des duplications du core.
+
+> Voir aussi : [`02-pillars.md`](02-pillars.md) — détail des 6 bets architecturaux load-bearing.
+
+## Les 6 Piliers Architecturaux
+
+Tout le découpage de phases ci-dessous découle de ces 6 piliers :
+
+| # | Pilier | Phase de build |
+|---|--------|----------------|
+| 1 | `.workflow/` comme **protocole versionné** (pas dossier ad-hoc) | Phase 1 |
+| 2 | Boucle **Skills + Curator** (mémoire institutionnelle cross-projet) | Phases 1 + 3 |
+| 3 | **Multi-LLM par rôle** (`reasoning`, `code_generation`, `fast`, `curator`, `compression`) | Phase 2 |
+| 4 | **Décisions actives + graphe rétro-propageant** (CONTRADICTS, SUPERSEDES…) | Phase 1 |
+| 5 | **CodePatcher chirurgical** dès le départ (jamais de fichier complet régénéré) | Phase 2 |
+| 6 | **MCP Server** comme surface primaire (CLI/VS Code/Telegram = clients du protocole) | Phase 6 |
 
 ---
 
 ## Architecture en Couches
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  INTERFACES                                                     │
-│  CLI (readline)  │  MCP Server  │  Telegram Bot  │  REST API   │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  ORCHESTRATEUR                                                  │
-│  WorkflowAgent.js (Agent mode) / PhaseManager.js               │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  PHASES                                                         │
-│  Discovery → Specification → Validation → Architecture → Exec  │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  CORE                                                           │
-│  ProjectMemory  │  VersionManager  │  DecisionsLog              │
-│  SyncChecker    │  ContextManager  │  TaskManager               │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  OUTILS                                                         │
-│  FileSystem  │  GitManager  │  ExecutionLoop                    │
-│  CodePatcher │  CodeIndexer │  (v1.5+)                         │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  LLM                                                            │
-│  LLMProvider (abstraction multi-LLM)  │  PromptBuilder          │
-└─────────────────────────────────────────────────────────────────┘
-                             │
-                    Anthropic Claude API
-                    (claude-sonnet-4-6 par défaut)
+┌──────────────────────────────────────────────────────────────────────────┐
+│  CLIENTS DU PROTOCOLE MCP                                                │
+│  CLI (typer+rich)  │  VS Code ext (TS)  │  Telegram bot  │  REST API    │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │ stdio MCP
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│  ORCHESTRATEUR                                                           │
+│  WorkflowAgent (mode Agent autonome) / MCPServer (mode Workflow Core)   │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│  PHASES (revisitables, pas waterfall)                                    │
+│  Discovery → Specification → Design → Architecture → Validation → Exec  │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│  CORE — Cerveau cognitif                                                 │
+│  ProjectMemory  │  ContextManager (tier + compression Hermes-style)     │
+│  PhaseManager   │  DecisionsLog + DecisionsGraph (rétro-propagation)    │
+│  SkillManager   │  SkillCurator   │  SyncChecker  │  TaskManager        │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│  OUTILS                                                                  │
+│  FileSystem  │  GitManager  │  CodePatcher (chirurgical, dès Phase 2)   │
+│  ExecutionLoop  │  CodeIndexer  │  ParallelExecutor (worktrees)         │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│  LLM (multi-modèles par rôle via LiteLLM)                                │
+│  reasoning │ code_generation │ fast │ curator │ compression              │
+│  PromptBuilder (contexte projet + skills + decisions injectés)           │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            ▼                  ▼                  ▼
+        Claude API        DeepSeek API        Ollama (local)
 ```
 
 ---
@@ -50,48 +68,52 @@ Workflow est une application Node.js structurée en couches clairement séparée
 ## Structure des Fichiers Source
 
 ```
-src/
-├── core/
-│   ├── WorkflowAgent.js      # Orchestrateur mode Agent (boucle principale)
-│   ├── ProjectMemory.js      # Lecture/écriture de tous les fichiers .workflow/
-│   ├── VersionManager.js     # Cycle de vie versions, pilote GitManager
-│   ├── DecisionsLog.js       # Écriture + lecture active decisions.log + decisions-graph.json
-│   ├── ContextManager.js     # Hiérarchie de chargement contexte LLM (scoring de pertinence)
-│   ├── PhaseManager.js       # Orchestre les 5 phases (Discovery → Réalisation)
-│   ├── SyncChecker.js        # Détection state drift + vérification branche Git + préconditions
-│   ├── DaemonHeartbeat.js    # Daemon de surveillance continue + briefings quotidiens (v1.5)
-│   └── OnboardingManager.js  # Onboarding nouveau dev depuis .workflow/ (v1.5)
+src/workflow/
+├── core/                            # Cerveau cognitif — indépendant de l'interface
+│   ├── workflow_agent.py            # Orchestrateur mode Agent (Phase 5)
+│   ├── project_memory.py            # Reference impl du protocole .workflow/
+│   ├── phase_manager.py             # Orchestre les 5 phases (revisitables)
+│   ├── context_manager.py           # Hiérarchie + compression Hermes-style + scoring
+│   ├── decisions_log.py             # decisions.log + index SQLite FTS5
+│   ├── decisions_graph.py           # Graphe relations + détection contradictions + rétro-propagation
+│   ├── skill_manager.py             # Skills cross-projet (CRUD + recherche)
+│   ├── skill_curator.py             # Consolidation périodique via LLM role='curator'
+│   ├── sync_checker.py              # State drift + branche Git + préconditions
+│   └── daemon_heartbeat.py          # Surveillance continue + briefings (Phase 7)
 │
-├── phases/
-│   ├── DiscoveryPhase.js     # Questions → vision.md (capture l'intent utilisateur)
-│   ├── SpecificationPhase.js # Propositions → features.json (intent par feature)
-│   ├── ValidationPhase.js    # Tâches → versions/ (génère Intent + Préconditions)
-│   ├── ArchitecturePhase.js  # Stack → tech-stack.json + TASK-001/002
-│   └── ExecutionPhase.js     # Code → validate → corriger (checkPreconditions + FailurePatterns)
+├── phases/                          # Les 5 phases projet (revisitables)
+│   ├── discovery_phase.py           # Questions → vision.md
+│   ├── specification_phase.py       # Propositions → features.json
+│   ├── design_system_phase.py       # Style → design.json + screen-flow.md
+│   ├── architecture_phase.py        # Stack → tech-stack.json + TASK-001/002
+│   ├── validation_phase.py          # Tâches → versions/ (avec mockups)
+│   └── execution_phase.py           # Sélection tâche prête → délègue à ExecutionLoop
 │
-├── tools/
-│   ├── CodePatcher.js        # Diffs chirurgicaux + fallback AST (v1.5)
-│   ├── CodeIndexer.js        # Index JSON + variantes LLM + ripgrep (v1.5)
-│   ├── ExecutionLoop.js      # build_validate → test → correction (FailurePatterns + loop detection)
-│   ├── FailurePatterns.js    # Mémoire des erreurs connues → failure-patterns.json
-│   ├── FileSystem.js         # Opérations fichiers (wrapper fs/promises)
-│   ├── GitManager.js         # Opérations git (status, checkout, merge, branch)
-│   ├── TaskManager.js        # CRUD TASK-XXX.md + progress.json (Intent + Préconditions)
-│   ├── WatchMode.js          # Observateur chokidar → .workflow/questions/ (v1.5)
-│   └── ConflictResolver.js   # Détecte conflits de décisions entre devs (v1.5)
+├── tools/                           # Outils techniques
+│   ├── filesystem.py                # WorkflowPaths + opérations async
+│   ├── git_manager.py               # asyncio.create_subprocess_exec
+│   ├── task_manager.py              # CRUD TASK-XXX.md + progress.json
+│   ├── version_manager.py           # Cycle de vie versions, pilote GitManager
+│   ├── code_patcher.py              # Diffs chirurgicaux + tree-sitter (Phase 2 — pas v1.5)
+│   ├── execution_loop.py            # generate_patch → apply → validate → retry → skill
+│   ├── code_indexer.py              # Index + recherche ripgrep (Phase 9)
+│   ├── parallel_executor.py         # Git worktrees pour tâches indépendantes (Phase 7)
+│   ├── watch_mode.py                # watchfiles → .workflow/questions/ (Phase 7)
+│   ├── conflict_resolver.py         # Conflits décisions entre devs (Phase 8)
+│   └── workflow_library.py          # Patterns cross-projet (Phase 9)
 │
-├── interfaces/
-│   ├── CLI.js                # readline + chalk (MVP) — watch, daemon, onboard, doc, audit, estimate
-│   ├── TelegramBot.js        # node-telegram-bot-api (v2)
-│   ├── MCPServer.js          # @modelcontextprotocol/sdk (Workflow Core)
-│   ├── RestAPI.js            # Express local (v2)
-│   ├── PipeCLI.js            # stdin/stdout pipe (v2)
-│   ├── VSCodeExtension/      # Sidebar état projet + annotations inline (v2)
-│   └── GitHubIntegration.js  # PR mergée → tâche DONE automatiquement (v2)
+├── interfaces/                      # Couches d'interaction (clients du protocole MCP)
+│   ├── cli.py                       # typer + rich + RichIO (Phase 5)
+│   ├── mcp_server.py                # SDK Python officiel (Phase 6) — surface primaire
+│   ├── allowed_commands_policy.py   # Whitelist + apprentissage (Phase 6)
+│   ├── github_integration.py        # PR mergée → tâche DONE (Phase 8)
+│   ├── rest_api.py                  # FastAPI local (Phase 8)
+│   ├── telegram_bot.py              # Client MCP wrapper (Phase 8)
+│   └── vscode_extension/            # TypeScript — VS Code API (Phase 8)
 │
-└── llm/
-    ├── LLMProvider.js        # Abstraction — Claude par défaut, multi-LLM futur
-    └── PromptBuilder.js      # Construit les prompts avec contexte projet injecté (intent inclus)
+└── llm/                             # Abstraction LLM
+    ├── llm_provider.py              # LiteLLM multi-modèles par rôle
+    └── prompt_builder.py            # Prompts avec contexte projet + skills + decisions injectés
 ```
 
 ---
@@ -343,35 +365,51 @@ const tools = [
 
 ## Stack Technique Détaillée
 
-| Composant | Choix | Version |
-|-----------|-------|---------|
-| Runtime | Node.js | 22 LTS |
-| LLM | `@anthropic-ai/sdk` | latest |
-| Modèle défaut | claude-sonnet-4-6 | — |
-| MCP | `@modelcontextprotocol/sdk` | latest |
-| CLI MVP | `readline` (natif) + `chalk` | — |
-| CLI v1.5 | `ink` + `react` | — |
-| Telegram | `node-telegram-bot-api` | — |
-| Watch mode | `chokidar` | v1.5 |
-| GitHub integration | `@octokit/rest` | v2 |
-| VS Code extension | VS Code Extension API | v2 |
-| AST | `tree-sitter` + grammaires | v1.5 |
-| Recherche | `ripgrep` subprocess | — |
-| Tests | `vitest` | — |
-| Linter | `eslint` + `@antfu/eslint-config` | — |
+| Composant | Choix | Notes |
+|-----------|-------|-------|
+| Runtime | Python | 3.12+ |
+| Package manager | `uv` | Lockfile + gestion Python version |
+| LLM (multi-rôle) | `litellm` | Routage par rôle — Claude, DeepSeek, Ollama |
+| Modèle reasoning | `claude-opus-4-7` | Discovery, Specification, Architecture |
+| Modèle code | `deepseek-coder-v2` | ExecutionLoop — best HumanEval |
+| Modèle fast | `claude-haiku-4-5` | Scoring décisions, préconditions |
+| Modèle curator | `claude-sonnet-4-6` | Consolidation skills cross-projet |
+| MCP | `mcp` (SDK Python officiel Anthropic) | Transport stdio |
+| CLI | `typer` + `rich` (RichIO) | Couleurs, panels, prompts |
+| Base de données | `aiosqlite` + SQLite FTS5 | DecisionsLog avec recherche plein-texte |
+| Fichiers async | `aiofiles` + `pathlib` | Opérations non-bloquantes |
+| AST (CodePatcher) | `tree-sitter` Python + grammaires | **Dès Phase 2** — pas v1.5 |
+| Recherche code | `ripgrep` (subprocess) | Index + recherche fast |
+| Watch mode | `watchfiles` | Surveillance fichiers (équivalent chokidar) |
+| Git | `asyncio.create_subprocess_exec` | GitManager complet |
+| YAML | `pyyaml` | Skills frontmatter, config |
+| Tests | `pytest` + `pytest-asyncio` | — |
+| Linter | `ruff` | Lint + format |
+| Type check | `mypy` strict | — |
+| VS Code extension | TypeScript (VS Code API) | Client MCP — Phase 8 |
+| Telegram | Bot Telegram API (Python) | Client MCP — Phase 8 |
+| GitHub | PyGithub ou octokit-py | Client MCP — Phase 8 |
+
+> Justification du choix Python : écosystème IA mature (LiteLLM, tree-sitter, ML), asyncio solide, MCP SDK officiel Python disponible. Les surfaces non-Python (VS Code = TS obligatoire) seront des **clients du protocole MCP** — pas du code partagé.
 
 ---
 
-## Roadmap Technique
+## Roadmap Technique (par seuil de capacité, pas par version produit)
 
-### MVP (Phase 1-4)
-Workflow Core fonctionnel, branché sur Claude Code via MCP. L'utilisateur peut gérer la mémoire projet depuis Claude Code sans construire le Workflow Agent complet.
+### Seuil 1 — Foundations (Phases 1-3)
+Le cerveau cognitif fonctionne. `LLMProvider` route par rôle, `ContextManager` charge en hiérarchie + compresse, `CodePatcher` applique des diffs chirurgicaux, `ExecutionLoop` exécute avec auto-correction et création de skills. **Pas encore d'agent utilisable** — c'est la couche moteur.
 
-### V1 (Phase 5)
-Versioning Git complet. Workflow Agent autonome utilisable en CLI pour les projets personnels.
+### Seuil 2 — Agent autonome (Phases 4-5)
+`PhaseManager` orchestre les 5 phases (revisitables). `WorkflowAgent` + CLI permettent un usage humain direct. Workflow génère un projet complet de "j'ai une idée" jusqu'à "j'ai des tâches en cours d'exécution".
 
-### V1.5 (Phase 6)
-`CodePatcher` (diffs chirurgicaux + tree-sitter) et `CodeIndexer` (ripgrep + variantes LLM). Robustesse sur les gros projets.
+### Seuil 3 — Dogfooding (Phase 6) ⭐
+`MCPServer` expose tous les outils. Branchement Claude Code immédiat. **Workflow construit Workflow** à partir de ce moment. C'est le point où la qualité du produit s'auto-vérifie par usage réel.
 
-### V2 (Phase 7)
-Telegram, REST API, CLI Ink, pipe. Workflow utilisable partout, pas seulement en console locale.
+### Seuil 4 — Proactif (Phase 7)
+`DaemonHeartbeat` (briefings + surveillance), `WatchMode` (annotation passive), `ParallelExecutor` (git worktrees pour tâches indépendantes). L'agent devient présent en arrière-plan sans interrompre.
+
+### Seuil 5 — Multi-surface (Phase 8)
+VS Code extension, Telegram bot, GitHub integration, REST API — **tous clients du protocole MCP**. Aucune logique métier dupliquée.
+
+### Seuil 6 — Robustesse + Polish (Phases 9-10)
+`CodeIndexer` pour gros projets, `WorkflowLibrary` cross-projet, `BreakingChangeDetector`. Puis `workflow doc generate`, `audit`, `estimate`, `onboard`.

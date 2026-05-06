@@ -1,181 +1,213 @@
-# Phase 1 — Tâche 1.2 : FileSystem.js
+# Phase 1 — Tâche 1.2 : FileSystem.py
 
 ## Objectif
 
-Créer le module `FileSystem.js` qui encapsule toutes les opérations sur les fichiers `.workflow/`. C'est la couche basse sur laquelle tous les autres modules s'appuient. Toutes les opérations doivent être async et gérer les erreurs proprement.
+Créer le module `FileSystem.py` qui encapsule toutes les opérations sur les fichiers `.workflow/`. C'est la couche basse sur laquelle tous les autres modules s'appuient. Toutes les opérations sont async et gèrent les erreurs proprement.
 
 ## Fichiers à Créer / Modifier
 
-- `src/tools/FileSystem.js` [CRÉER]
-- `tests/unit/FileSystem.test.js` [CRÉER]
+- `src/workflow/tools/filesystem.py` [CRÉER]
+- `tests/unit/test_filesystem.py` [CRÉER]
 
 ## Responsabilités
 
 - Initialiser la structure `.workflow/` dans un projet cible
 - Lire/écrire des fichiers JSON (project.json, progress.json, etc.)
-- Lire/écrire des fichiers Markdown (vision.md, TASK-XXX.md, decisions.log)
+- Lire/écrire des fichiers Markdown (vision.md, TASK-XXX.md)
 - Vérifier l'existence de fichiers et dossiers
 - Lister les fichiers de tâches d'une version
 - Opérations atomiques (écrire dans un fichier temporaire puis renommer)
 
 ## Implémentation
 
-```javascript
-// src/tools/FileSystem.js
-import { readFile, writeFile, mkdir, access, readdir, rename } from 'fs/promises';
-import { join, dirname } from 'path';
-import { constants } from 'fs';
+```python
+# src/workflow/tools/filesystem.py
+import json
+from pathlib import Path
+from dataclasses import dataclass, field
+import aiofiles
+import aiofiles.os
 
-export class FileSystem {
-  constructor(projectRoot) {
-    this.projectRoot = projectRoot;
-    this.workflowDir = join(projectRoot, '.workflow');
-  }
 
-  // Chemins standards
-  paths = {
-    project: () => join(this.workflowDir, 'project.json'),
-    vision: () => join(this.workflowDir, 'vision.md'),
-    features: () => join(this.workflowDir, 'features.json'),
-    techStack: () => join(this.workflowDir, 'tech-stack.json'),
-    codeIndex: () => join(this.workflowDir, 'code-index.json'),
-    decisionsLog: () => join(this.workflowDir, 'decisions.log'),
-    decisionsGraph: () => join(this.workflowDir, 'decisions-graph.json'),
-    failurePatterns: () => join(this.workflowDir, 'failure-patterns.json'),
-    design: () => join(this.workflowDir, 'design.json'),
-    questionsDir: () => join(this.workflowDir, 'questions'),
-    briefingsDir: () => join(this.workflowDir, 'briefings'),
-    questionFile: (name) => join(this.workflowDir, 'questions', name),
-    briefingFile: (date) => join(this.workflowDir, 'briefings', `${date}.md`),
-    versionDir: (v) => join(this.workflowDir, 'versions', v),
-    versionMeta: (v) => join(this.workflowDir, 'versions', v, 'meta.json'),
-    versionProgress: (v) => join(this.workflowDir, 'versions', v, 'progress.json'),
-    taskFile: (v, taskId) => join(this.workflowDir, 'versions', v, 'tasks', `${taskId}.md`),
-    tasksDir: (v) => join(this.workflowDir, 'versions', v, 'tasks'),
-  };
+@dataclass
+class WorkflowPaths:
+    """Tous les chemins standards du dossier .workflow/"""
+    workflow_dir: Path
 
-  // Initialiser la structure .workflow/ complète
-  async init() {
-    await mkdir(this.workflowDir, { recursive: true });
-    await mkdir(join(this.workflowDir, 'versions'), { recursive: true });
-    await mkdir(this.paths.questionsDir(), { recursive: true });
-    await mkdir(this.paths.briefingsDir(), { recursive: true });
-  }
+    @property
+    def project(self) -> Path:
+        return self.workflow_dir / 'project.json'
 
-  // Vérifier si un fichier ou dossier existe (utilisé par SyncChecker.checkPreconditions)
-  async exists(filePath) {
-    try {
-      await access(filePath, constants.F_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+    @property
+    def vision(self) -> Path:
+        return self.workflow_dir / 'vision.md'
 
-  // Vérifier si .workflow/ existe
-  async isInitialized() {
-    try {
-      await access(this.workflowDir, constants.F_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+    @property
+    def features(self) -> Path:
+        return self.workflow_dir / 'features.json'
 
-  // Lire un fichier JSON — retourne null si absent
-  async readJSON(filePath) {
-    try {
-      const content = await readFile(filePath, 'utf-8');
-      return JSON.parse(content);
-    } catch (err) {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    }
-  }
+    @property
+    def tech_stack(self) -> Path:
+        return self.workflow_dir / 'tech-stack.json'
 
-  // Écrire un fichier JSON (atomique : tmp → rename)
-  async writeJSON(filePath, data) {
-    const dir = dirname(filePath);
-    await mkdir(dir, { recursive: true });
-    const tmp = `${filePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
-    await rename(tmp, filePath);
-  }
+    @property
+    def code_index(self) -> Path:
+        return self.workflow_dir / 'code-index.json'
 
-  // Lire un fichier Markdown — retourne null si absent
-  async readMarkdown(filePath) {
-    try {
-      return await readFile(filePath, 'utf-8');
-    } catch (err) {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    }
-  }
+    @property
+    def decisions_db(self) -> Path:
+        return self.workflow_dir / 'decisions.db'
 
-  // Écrire un fichier Markdown (atomique)
-  async writeMarkdown(filePath, content) {
-    const dir = dirname(filePath);
-    await mkdir(dir, { recursive: true });
-    const tmp = `${filePath}.tmp`;
-    await writeFile(tmp, content, 'utf-8');
-    await rename(tmp, filePath);
-  }
+    @property
+    def failure_patterns(self) -> Path:
+        return self.workflow_dir / 'failure-patterns.json'
 
-  // Lire sélectivement un ensemble de fichiers source (pour ContextManager)
-  async readSelective(filePaths) {
-    const results = {};
-    await Promise.all(
-      filePaths.map(async (fp) => {
-        try {
-          results[fp] = await readFile(join(this.projectRoot, fp), 'utf-8');
-        } catch {
-          results[fp] = null; // Fichier non encore créé
-        }
-      })
-    );
-    return results;
-  }
+    @property
+    def design(self) -> Path:
+        return self.workflow_dir / 'design.json'
 
-  // Lister les tâches d'une version (retourne les IDs triés : TASK-001, TASK-002...)
-  async listTaskIds(version) {
-    const dir = this.paths.tasksDir(version);
-    try {
-      const files = await readdir(dir);
-      return files
-        .filter(f => f.endsWith('.md'))
-        .map(f => f.replace('.md', ''))
-        .sort();
-    } catch {
-      return [];
-    }
-  }
+    @property
+    def questions_dir(self) -> Path:
+        return self.workflow_dir / 'questions'
 
-  // Lister les versions disponibles
-  async listVersions() {
-    const dir = join(this.workflowDir, 'versions');
-    try {
-      const entries = await readdir(dir, { withFileTypes: true });
-      return entries
-        .filter(e => e.isDirectory())
-        .map(e => e.name)
-        .sort();
-    } catch {
-      return [];
-    }
-  }
-}
+    @property
+    def briefings_dir(self) -> Path:
+        return self.workflow_dir / 'briefings'
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.workflow_dir / 'skills'
+
+    def question_file(self, name: str) -> Path:
+        return self.workflow_dir / 'questions' / name
+
+    def briefing_file(self, date_str: str) -> Path:
+        return self.workflow_dir / 'briefings' / f'{date_str}.md'
+
+    def version_dir(self, version: str) -> Path:
+        return self.workflow_dir / 'versions' / version
+
+    def version_meta(self, version: str) -> Path:
+        return self.workflow_dir / 'versions' / version / 'meta.json'
+
+    def version_progress(self, version: str) -> Path:
+        return self.workflow_dir / 'versions' / version / 'progress.json'
+
+    def task_file(self, version: str, task_id: str) -> Path:
+        return self.workflow_dir / 'versions' / version / 'tasks' / f'{task_id}.md'
+
+    def tasks_dir(self, version: str) -> Path:
+        return self.workflow_dir / 'versions' / version / 'tasks'
+
+
+class FileSystem:
+    def __init__(self, project_root: str):
+        self.project_root = Path(project_root)
+        self.workflow_dir = self.project_root / '.workflow'
+        self.paths = WorkflowPaths(self.workflow_dir)
+
+    async def init(self):
+        """Initialiser la structure .workflow/ complète"""
+        for directory in [
+            self.workflow_dir,
+            self.workflow_dir / 'versions',
+            self.paths.questions_dir,
+            self.paths.briefings_dir,
+            self.paths.skills_dir,
+        ]:
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def exists(self, file_path: str | Path) -> bool:
+        """Vérifier si un fichier ou dossier existe (synchrone — utilisé par SyncChecker)"""
+        return Path(file_path).exists()
+
+    def is_initialized(self) -> bool:
+        """Vérifier si .workflow/ existe"""
+        return self.workflow_dir.exists()
+
+    async def read_json(self, file_path: str | Path) -> dict | None:
+        """Lire un fichier JSON — retourne None si absent"""
+        try:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+            return json.loads(content)
+        except FileNotFoundError:
+            return None
+        except json.JSONDecodeError as e:
+            raise ValueError(f'JSON invalide dans {file_path}: {e}') from e
+
+    async def write_json(self, file_path: str | Path, data: dict):
+        """Écrire un fichier JSON de façon atomique (tmp → rename)"""
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix('.tmp')
+        async with aiofiles.open(tmp, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(data, indent=2, ensure_ascii=False))
+        tmp.rename(path)  # Atomique sur le même filesystem
+
+    async def read_markdown(self, file_path: str | Path) -> str | None:
+        """Lire un fichier Markdown — retourne None si absent"""
+        try:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                return await f.read()
+        except FileNotFoundError:
+            return None
+
+    async def write_markdown(self, file_path: str | Path, content: str):
+        """Écrire un fichier Markdown de façon atomique"""
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + '.tmp')
+        async with aiofiles.open(tmp, 'w', encoding='utf-8') as f:
+            await f.write(content)
+        tmp.rename(path)
+
+    async def read_selective(self, file_paths: list[str]) -> dict[str, str | None]:
+        """Lire sélectivement un ensemble de fichiers source en parallèle (pour ContextManager)"""
+        import asyncio
+
+        async def read_one(fp: str) -> tuple[str, str | None]:
+            try:
+                async with aiofiles.open(self.project_root / fp, 'r', encoding='utf-8') as f:
+                    return fp, await f.read()
+            except FileNotFoundError:
+                return fp, None
+
+        results = await asyncio.gather(*[read_one(fp) for fp in file_paths])
+        return dict(results)
+
+    async def list_task_ids(self, version: str) -> list[str]:
+        """Lister les tâches d'une version (retourne les IDs triés : TASK-001, TASK-002...)"""
+        tasks_dir = self.paths.tasks_dir(version)
+        if not tasks_dir.exists():
+            return []
+        return sorted([
+            f.stem for f in tasks_dir.iterdir()
+            if f.suffix == '.md'
+        ])
+
+    async def list_versions(self) -> list[str]:
+        """Lister les versions disponibles"""
+        versions_dir = self.workflow_dir / 'versions'
+        if not versions_dir.exists():
+            return []
+        return sorted([
+            d.name for d in versions_dir.iterdir()
+            if d.is_dir()
+        ])
 ```
 
 ## Critères de Validation
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| 1 | `init()` crée la structure `.workflow/versions/`, `questions/` et `briefings/` | ⬜ |
-| 2 | `readJSON` retourne `null` pour un fichier absent (pas d'exception) | ⬜ |
-| 3 | `writeJSON` est atomique (passe par un fichier `.tmp`) | ⬜ |
-| 4 | `readSelective` lit plusieurs fichiers en parallèle | ⬜ |
-| 5 | `listTaskIds` retourne les IDs triés | ⬜ |
-| 6 | `exists()` retourne `true` pour un fichier présent, `false` pour un absent | ⬜ |
-| 7 | `paths.failurePatterns()` pointe vers `.workflow/failure-patterns.json` | ⬜ |
-| 8 | `paths.questionsDir()` et `paths.briefingsDir()` existent dans `paths` | ⬜ |
-| 9 | Tests unitaires couvrent les cas normaux et les fichiers absents | ⬜ |
+| 1 | `init()` crée `.workflow/versions/`, `questions/`, `briefings/` et `skills/` | ⬜ |
+| 2 | `read_json` retourne `None` pour un fichier absent (pas d'exception) | ⬜ |
+| 3 | `write_json` est atomique (passe par un fichier `.tmp`) | ⬜ |
+| 4 | `read_selective` lit plusieurs fichiers en parallèle | ⬜ |
+| 5 | `list_task_ids` retourne les IDs triés | ⬜ |
+| 6 | `exists()` retourne `True` pour un fichier présent, `False` pour un absent | ⬜ |
+| 7 | `paths.decisions_db` pointe vers `.workflow/decisions.db` | ⬜ |
+| 8 | `paths.failure_patterns` pointe vers `.workflow/failure-patterns.json` | ⬜ |
+| 9 | `paths.skills_dir` pointe vers `.workflow/skills/` | ⬜ |
+| 10 | Tests unitaires couvrent les cas normaux et les fichiers absents | ⬜ |

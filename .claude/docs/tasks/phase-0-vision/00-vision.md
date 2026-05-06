@@ -2,21 +2,29 @@
 
 ## Le Problème
 
-Les agents de code actuels souffrent d'un défaut structurel : ils vivent dans le contexte de conversation. Quand ce contexte sature, l'agent perd le fil. L'utilisateur recommence tout depuis zéro dans une nouvelle session. Pire : ces agents ne comprennent jamais un projet dans sa globalité — on leur soumet des tâches isolées sans vision d'ensemble.
+Les agents de code actuels souffrent d'un défaut structurel : ils vivent dans le contexte de conversation. Quand ce contexte sature, l'agent perd le fil. L'utilisateur recommence tout depuis zéro dans une nouvelle session. Pire : ces agents ne comprennent jamais un projet dans sa globalité — on leur soumet des tâches isolées sans vision d'ensemble. Et même quand un agent résout brillamment un problème, **il oublie tout au projet suivant** : aucune capitalisation d'expérience.
 
 ## La Solution : Workflow
 
-**Workflow** est un agent de code conçu pour un freelance ou développeur indépendant. Sa proposition de valeur unique : **la mémoire projet persiste entre toutes les sessions**.
+**Workflow** est un agent de code pour freelance et développeur indépendant qui **se souvient et accumule de l'expérience**, comme un humain qui a fait 30 projets et applique ses leçons.
 
-Toute la connaissance du projet (vision, fonctionnalités, stack, décisions, état d'avancement) vit dans un dossier `.workflow/` à la racine du projet. Au démarrage de chaque session, Workflow lit ces fichiers et reprend exactement où il s'était arrêté — sans que l'utilisateur ait besoin de réexpliquer quoi que ce soit.
+Deux mémoires distinctes, persistantes :
 
-### Les 5 Piliers de Workflow
+1. **Mémoire projet** (`.workflow/` dans le projet) — vision, fonctionnalités, stack, décisions, état d'avancement. Workflow reprend exactement où il s'est arrêté à chaque session.
+2. **Mémoire institutionnelle** (`~/.workflow/skills/` global) — patterns appris à travers tous les projets. Chaque retry réussi devient un skill ; un Curator LLM consolide périodiquement. **Workflow devient plus intelligent à chaque projet.**
 
-1. **Mémoire persistante** — tout vit dans `.workflow/`, zéro dépendance au contexte de conversation
-2. **Décisions actives** — `decisions.log` + `decisions-graph.json` (relations, contradictions, niveaux de confiance) consultés avant chaque tâche
-3. **Auto-correction intelligente** — `FailurePatterns.js` mémorise les erreurs et leurs solutions cross-tâches
-4. **Observation passive** — `WatchMode` détecte les changements manuels et pose des questions sans interrompre
-5. **Conscience continue** — `DaemonHeartbeat` surveille le projet et génère un briefing quotidien
+> **Thèse différenciatrice** : Cursor / Claude Code sont des "assistants experts dans la session". Workflow est un **PM technique avec mémoire institutionnelle**. Quand tu démarres un projet React, il sait déjà comment tu structures tes hooks, quelles erreurs Prisma reviennent toujours, et quels choix d'architecture tu as faits sur les 5 derniers projets similaires.
+
+### Les 6 Piliers Load-Bearing
+
+1. **Protocole `.workflow/`** — schéma versionné lisible par tous les clients (CLI, VS Code, Telegram, web). Pas un dossier ad-hoc.
+2. **Skills + Curator** — boucle d'apprentissage cumulé cross-projet. Le vrai différenciateur.
+3. **Multi-LLM par rôle** — `reasoning` pour penser, `code_generation` pour coder, `fast` pour scorer, `curator` pour consolider. Chaque rôle son optimum.
+4. **Décisions actives + graphe rétro-propageant** — `decisions.log` + graphe de relations (CONTRADICTS, DEPENDS_ON, SUPERSEDES). Détecte les contradictions et propage aux tâches en cours.
+5. **CodePatcher chirurgical** — diffs et search/replace blocks dès le départ. Jamais de régénération de fichier entier.
+6. **MCP Server comme surface primaire** — toutes les autres surfaces (CLI, VS Code, Telegram, REST) sont des clients du protocole MCP.
+
+> Détail complet : voir `02-pillars.md`.
 
 ---
 
@@ -32,38 +40,63 @@ Workflow comme gestionnaire de projet pur, intégrable dans d'autres agents via 
 
 ---
 
-## Les 5 Phases du Workflow Projet
+## Les 5 Phases du Workflow Projet (revisitables, pas waterfall)
+
+> **Principe fondamental** : ces phases ne sont pas un tunnel à sens unique. L'utilisateur peut **revenir** à une phase antérieure à tout moment (ajouter une fonctionnalité après avoir codé, changer la stack après une expérience), et **sauter** des phases via le **Starter Mode**.
+
+### Starter Mode — coder en 30 secondes
+
+Pour ne pas reproduire l'anti-pattern "1h de Q/R avant de pouvoir coder", Workflow propose un mode rapide :
+
+```
+workflow start --quick "ajoute un endpoint /users qui liste mes utilisateurs"
+  → Workflow détecte qu'aucune phase n'a été faite
+  → Génère une vision minimale + tech-stack par défaut détecté du projet
+  → Crée TASK-001 directement, en parallèle commence Discovery en background
+  → L'utilisateur code immédiatement, Workflow remplit les phases pendant ce temps
+```
+
+Les phases formelles (Discovery → Execution) restent disponibles via `workflow start --full` quand l'utilisateur veut une démarche structurée dès le départ (greenfield, projet d'équipe).
 
 ### Phase 1 — Discovery
 L'utilisateur décrit son idée. Workflow pose des questions ciblées pour éliminer les zones d'ombre.
 **Sortie** : `vision.md`
+**Revisitable** : ajouter une zone manquante, pivoter le produit.
 
 ### Phase 2 — Specification
 Workflow propose des fonctionnalités basées sur la vision, l'utilisateur valide ou ajuste.
 **Sortie** : `features.json`
+**Revisitable** : ajouter une fonctionnalité en cours de v1.0 (la nouvelle entrée crée une tâche pending au lieu de bloquer).
 
-### Phase 3 — Validation
-Workflow génère les fichiers de tâches détaillés par version, l'utilisateur les valide ou demande des modifications.
-**Sortie** : Dossier `versions/` avec les tâches de chaque version validées.
-
-**Règle de granularité** : `1 tâche = 1 PR potentielle = max 4h de travail = max 3 fichiers créés/modifiés`. Si une tâche dépasse ces seuils, Workflow la découpe automatiquement avant validation.
+### Phase 3 — Design System
+`DiscoveryPhase` et `DesignSystemPhase` capturent le style visuel souhaité. `design.json` est généré et utilisé par `ValidationPhase` pour produire des mockups ASCII conformes dans chaque tâche.
+**Sortie** : `design.json` + `design-system.json` + `screen-flow.md`
 
 ### Phase 4 — Architecture
 Workflow suggère la stack technologique avec justification (si non définie). Impose également :
 - **TASK-001** : Setup projet + linter (systématique pour toute v1.0)
 - **TASK-002** : Framework de tests + premier test de smoke (systématique pour toute v1.0)
-- La liste `allowed_commands` dans `tech-stack.json`
+- La policy `allowed_commands` initiale (whitelist + apprentissage — voir Pilier 6)
 
 **Sortie** : `tech-stack.json`
+**Revisitable** : changement de stack majeur (ajout de Redis, migration de Postgres → SQLite). Workflow détecte les conflits avec les décisions existantes via le decisions-graph.
 
-### Phase 5 — Réalisation
-Workflow exécute version par version, tâche par tâche.
+### Phase 5 — Validation
+Workflow génère les fichiers de tâches détaillés par version, l'utilisateur les valide ou demande des modifications.
+**Sortie** : Dossier `versions/` avec les tâches validées.
+
+**Règle de granularité sémantique** : `1 tâche = 1 PR mergeable atomiquement avec ses tests`. Le nombre exact de fichiers ou la durée estimée sont des indicateurs, pas des règles strictes — le critère réel est la *cohérence atomique* du diff produit.
+
+### Phase 6 — Réalisation
+Workflow exécute version par version, tâche par tâche, avec **CodePatcher chirurgical** (jamais de régénération de fichier complet) :
 
 ```
-Consulter decisions.log
-  → Code → build_validate → Tests →
-  ✅ Tout passe  → tâche done, tâche suivante
-  ❌ Erreur      → Workflow analyse → consulte decisions.log → corrige → retente (max 3)
+Consulter decisions.log scoré + skills pertinents
+  → Génère un patch (search/replace blocks ou tool-based edit)
+  → Applique → build_validate → Tests →
+  ✅ Tout passe  → tâche done, decisions extraites, prochain
+  ❌ Erreur      → SkillManager.find_fix_for_error() → retry avec known_fix (max 3)
+  ❌ Retry réussi → ExecutionLoop crée un skill, Curator le consolidera plus tard
   ❌ Persistant  → escalade à l'user avec contexte complet + proposition de découpe
 ```
 

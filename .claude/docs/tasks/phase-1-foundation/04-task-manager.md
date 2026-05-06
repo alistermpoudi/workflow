@@ -1,307 +1,283 @@
-# Phase 1 — Tâche 1.4 : TaskManager.js
+# Phase 1 — Tâche 1.4 : TaskManager.py
 
 ## Objectif
 
-Créer le module `TaskManager.js` qui gère le CRUD sur les fichiers `TASK-XXX.md` et les fichiers `progress.json`. C'est ce module qui impose le format auto-suffisant des tâches et garantit la numérotation séquentielle.
+Créer le module `TaskManager.py` qui gère le CRUD sur les fichiers `TASK-XXX.md` et les fichiers `progress.json`. C'est ce module qui impose le format auto-suffisant des tâches et garantit la numérotation séquentielle.
 
 ## Dépendances
 
-- Tâche 1.2 ✅ (`FileSystem.js`)
-- Tâche 1.3 ✅ (`ProjectMemory.js`)
+- Tâche 1.2 ✅ (`FileSystem.py`)
+- Tâche 1.3 ✅ (`ProjectMemory.py`)
 
 ## Fichiers à Créer / Modifier
 
-- `src/tools/TaskManager.js` [CRÉER]
-- `tests/unit/TaskManager.test.js` [CRÉER]
+- `src/workflow/tools/task_manager.py` [CRÉER]
+- `tests/unit/test_task_manager.py` [CRÉER]
 
 ## Format des Fichiers de Tâche
 
-Voir `CLAUDE.md#format-des-tâches-auto-suffisantes` pour le format complet. Le `TaskManager` est responsable de générer et parser ce format.
+Voir `CLAUDE.md#format-des-tâches-auto-suffisantes` pour le format complet.
 
 **Statuts possibles** : `⬜ EN ATTENTE` | `🔄 EN COURS` | `✅ TERMINÉ` | `❌ REPORTÉ`
 
-### Champ `Intent` — Le "Pourquoi Humain"
-
-Chaque tâche inclut une section `## Intent` distincte des critères d'acceptation. Elle capture **pourquoi l'utilisateur veut vraiment cette fonctionnalité** — informations qui guident les décisions d'implémentation quand les critères sont ambigus.
-
-```markdown
-## Intent
-L'utilisateur veut que les clients puissent s'inscrire seuls,
-SANS passer par un admin. Le flux email de confirmation est
-secondaire pour l'instant — ne pas bloquer l'inscription
-sur une vérification email non reçue.
-
-## Critères d'acceptation
-- [ ] POST /auth/register fonctionne
-- [ ] Email de confirmation envoyé (non-bloquant)
-```
-
-L'`intent` est injecté dans le prompt LLM **avant** les critères. Si deux implémentations respectent les critères mais l'une contredit l'intent, Workflow choisit l'autre.
-
-**Règle** : L'`intent` ne peut pas être vide sur une tâche ayant des critères d'acceptation définis. `ValidationPhase` l'exige lors de la génération.
-
 ## Implémentation
 
-```javascript
-// src/tools/TaskManager.js
-import { FileSystem } from './FileSystem.js';
-import { ProjectMemory } from '../core/ProjectMemory.js';
+```python
+# src/workflow/tools/task_manager.py
+import re
+from datetime import date as date_cls
+from workflow.tools.filesystem import FileSystem
+from workflow.core.project_memory import ProjectMemory
 
-export class TaskManager {
-  constructor(projectRoot) {
-    this.fs = new FileSystem(projectRoot);
-    this.memory = new ProjectMemory(projectRoot);
-  }
 
-  // Générer le prochain ID de tâche (TASK-001, TASK-002...)
-  async nextTaskId(version) {
-    const existing = await this.fs.listTaskIds(version);
-    if (existing.length === 0) return 'TASK-001';
-    const last = existing[existing.length - 1];
-    const num = parseInt(last.replace('TASK-', ''), 10);
-    return `TASK-${String(num + 1).padStart(3, '0')}`;
-  }
+class TaskManager:
+    def __init__(self, project_root: str):
+        self.fs = FileSystem(project_root)
+        self.memory = ProjectMemory(project_root)
 
-  // Créer une nouvelle tâche
-  async createTask(version, taskData) {
-    const taskId = taskData.id ?? await this.nextTaskId(version);
-    const content = this.renderTaskFile({ ...taskData, id: taskId, version, status: '⬜ EN ATTENTE' });
-    await this.fs.writeMarkdown(this.fs.paths.taskFile(version, taskId), content);
+    async def next_task_id(self, version: str) -> str:
+        """Générer le prochain ID de tâche (TASK-001, TASK-002...)"""
+        existing = await self.fs.list_task_ids(version)
+        if not existing:
+            return 'TASK-001'
+        last = existing[-1]
+        num = int(last.replace('TASK-', ''))
+        return f'TASK-{num + 1:03d}'
 
-    // Ajouter dans progress.json
-    const progress = await this.memory.getProgress(version);
-    progress.pending.push(taskId);
-    await this.memory.saveProgress(version, progress);
+    async def create_task(self, version: str, task_data: dict) -> str:
+        """Créer une nouvelle tâche"""
+        task_id = task_data.get('id') or await self.next_task_id(version)
+        content = self.render_task_file({
+            **task_data,
+            'id': task_id,
+            'version': version,
+            'status': '⬜ EN ATTENTE',
+        })
+        await self.fs.write_markdown(self.fs.paths.task_file(version, task_id), content)
 
-    return taskId;
-  }
+        # Ajouter dans progress.json
+        progress = await self.memory.get_progress(version)
+        progress['pending'].append(task_id)
+        await self.memory.save_progress(version, progress)
+        return task_id
 
-  // Lire une tâche (parser le Markdown → objet)
-  async getTask(version, taskId) {
-    const content = await this.fs.readMarkdown(this.fs.paths.taskFile(version, taskId));
-    if (!content) return null;
-    return this.parseTaskFile(taskId, version, content);
-  }
+    async def get_task(self, version: str, task_id: str) -> dict | None:
+        """Lire une tâche (parser le Markdown → objet)"""
+        content = await self.fs.read_markdown(self.fs.paths.task_file(version, task_id))
+        if not content:
+            return None
+        return self.parse_task_file(task_id, version, content)
 
-  // Marquer une tâche comme terminée
-  async markDone(version, taskId) {
-    await this.updateTaskStatus(version, taskId, '✅ TERMINÉ');
-    const progress = await this.memory.getProgress(version);
-    progress.pending = progress.pending.filter(id => id !== taskId);
-    progress.done.push(taskId);
-    await this.memory.saveProgress(version, progress);
-  }
+    async def mark_done(self, version: str, task_id: str):
+        """Marquer une tâche comme terminée"""
+        await self._update_task_status(version, task_id, '✅ TERMINÉ')
+        progress = await self.memory.get_progress(version)
+        progress['pending'] = [t for t in progress['pending'] if t != task_id]
+        if task_id not in progress['done']:
+            progress['done'].append(task_id)
+        await self.memory.save_progress(version, progress)
 
-  // Marquer une tâche comme en cours
-  async markInProgress(version, taskId) {
-    await this.updateTaskStatus(version, taskId, '🔄 EN COURS');
-  }
+    async def mark_in_progress(self, version: str, task_id: str):
+        """Marquer une tâche comme en cours"""
+        await self._update_task_status(version, task_id, '🔄 EN COURS')
 
-  // Marquer une tâche comme reportée à une autre version
-  async deferTask(version, taskId, targetVersion, reason) {
-    await this.updateTaskStatus(version, taskId, '❌ REPORTÉ');
-    const progress = await this.memory.getProgress(version);
-    progress.pending = progress.pending.filter(id => id !== taskId);
-    progress.deferred.push({ id: taskId, to: targetVersion, reason });
-    await this.memory.saveProgress(version, progress);
+    async def defer_task(self, version: str, task_id: str, target_version: str, reason: str):
+        """Reporter une tâche à une autre version"""
+        await self._update_task_status(version, task_id, '❌ REPORTÉ')
+        progress = await self.memory.get_progress(version)
+        progress['pending'] = [t for t in progress['pending'] if t != task_id]
+        progress['deferred'].append({'id': task_id, 'to': target_version, 'reason': reason})
+        await self.memory.save_progress(version, progress)
+        await self.append_journal(version, task_id, f'Reportée vers {target_version} — raison : {reason}')
 
-    // Ajouter une entrée dans le Journal de la tâche
-    await this.appendJournal(version, taskId,
-      `Reportée vers ${targetVersion} — raison : ${reason}`
-    );
-  }
+    async def append_journal(self, version: str, task_id: str, entry: str):
+        """Ajouter une entrée dans le champ Journal de la tâche"""
+        content = await self.fs.read_markdown(self.fs.paths.task_file(version, task_id))
+        if not content:
+            return
+        today = date_cls.today().isoformat()
 
-  // Ajouter une entrée dans le champ Journal de la tâche
-  async appendJournal(version, taskId, entry) {
-    const content = await this.fs.readMarkdown(this.fs.paths.taskFile(version, taskId));
-    if (!content) return;
-    const date = new Date().toISOString().split('T')[0];
+        if '(vide — tâche jamais tentée)' in content:
+            updated = content.replace(
+                '(vide — tâche jamais tentée)',
+                f'[{today}] {entry}'
+            )
+        else:
+            updated = re.sub(
+                r'(\n{1,2}## Statut)',
+                f'\n[{today}] {entry}\n\\1',
+                content
+            )
+        await self.fs.write_markdown(self.fs.paths.task_file(version, task_id), updated)
 
-    // Remplacer "(vide — tâche jamais tentée)" par la première entrée, ou appender
-    let updated;
-    if (content.includes('(vide — tâche jamais tentée)')) {
-      updated = content.replace(
-        '(vide — tâche jamais tentée)',
-        `[${date}] ${entry}`
-      );
-    } else {
-      // Appender avant ## Statut (avec ou sans ligne vide avant)
-      updated = content.replace(
-        /(\n{1,2}## Statut)/,
-        `\n[${date}] ${entry}\n$1`
-      );
-    }
+    async def get_pending_tasks(self, version: str) -> list[str]:
+        """Lister les tâches en attente d'une version"""
+        progress = await self.memory.get_progress(version)
+        return progress['pending']
 
-    await this.fs.writeMarkdown(this.fs.paths.taskFile(version, taskId), updated);
-  }
+    async def get_next_task(self, version: str) -> dict | None:
+        """Prochaine tâche à exécuter (première EN ATTENTE)"""
+        pending = await self.get_pending_tasks(version)
+        if not pending:
+            return None
+        return await self.get_task(version, pending[0])
 
-  // Lister les tâches en attente d'une version
-  async getPendingTasks(version) {
-    const progress = await this.memory.getProgress(version);
-    return progress.pending;
-  }
+    async def _update_task_status(self, version: str, task_id: str, status: str):
+        """Mettre à jour le statut dans le fichier Markdown"""
+        content = await self.fs.read_markdown(self.fs.paths.task_file(version, task_id))
+        if not content:
+            return
+        updated = re.sub(r'## Statut\n.*', f'## Statut\n{status}', content)
+        await self.fs.write_markdown(self.fs.paths.task_file(version, task_id), updated)
 
-  // Prochaine tâche à exécuter (première EN ATTENTE)
-  async getNextTask(version) {
-    const pending = await this.getPendingTasks(version);
-    if (pending.length === 0) return null;
-    return this.getTask(version, pending[0]);
-  }
+    def render_task_file(self, task: dict) -> str:
+        """Rendre un objet tâche en Markdown"""
+        deps = '\n'.join(
+            f"- {d['id']} {'✅' if d.get('done') else '⬜'} ({d.get('description', '')})"
+            for d in (task.get('dependencies') or [])
+        ) or '(aucune)'
 
-  // Mettre à jour le statut dans le fichier Markdown
-  async updateTaskStatus(version, taskId, status) {
-    const content = await this.fs.readMarkdown(this.fs.paths.taskFile(version, taskId));
-    if (!content) return;
-    const updated = content.replace(
-      /## Statut\n.*/,
-      `## Statut\n${status}`
-    );
-    await this.fs.writeMarkdown(this.fs.paths.taskFile(version, taskId), updated);
-  }
+        files = '\n'.join(
+            f"- {f['path']} [{f['action']}]"
+            for f in (task.get('files') or [])
+        ) or '(aucun)'
 
-  // Rendre un objet tâche en Markdown
-  renderTaskFile(task) {
-    const deps = (task.dependencies ?? [])
-      .map(d => `- ${d.id} ${d.done ? '✅' : '⬜'} (${d.description})`)
-      .join('\n') || '(aucune)';
+        criteria = '\n'.join(
+            f'- [ ] {c}'
+            for c in (task.get('criteria') or [])
+        ) or '- [ ] À définir'
 
-    const files = (task.files ?? [])
-      .map(f => `- ${f.path} [${f.action}]`)
-      .join('\n') || '(aucun)';
+        preconditions_raw = task.get('preconditions') or {}
+        if preconditions_raw:
+            import json
+            preconditions = '\n'.join(
+                f'- {k}: {json.dumps(v)}'
+                for k, v in preconditions_raw.items()
+            )
+        else:
+            preconditions = '(aucune)'
 
-    const criteria = (task.criteria ?? [])
-      .map(c => `- [ ] ${c}`)
-      .join('\n') || '- [ ] À définir';
+        # Rendu du mockup UI
+        mockup = task.get('mockup')
+        if mockup and mockup.get('screens'):
+            mockup_section = '\n\n'.join(
+                f"### Écran — {s['name']}\n{s['ascii']}\n"
+                + (f"Style : {s['notes']}" if s.get('notes') else '')
+                for s in mockup['screens']
+            )
+        else:
+            mockup_section = '(aucune interface — tâche backend / configuration)'
 
-    const preconditions = task.preconditions
-      ? Object.entries(task.preconditions)
-          .map(([k, v]) => `- ${k}: ${JSON.stringify(v)}`)
-          .join('\n')
-      : '(aucune)';
-
-    // Rendu du mockup UI — présent uniquement pour les tâches avec interface
-    const mockupSection = task.mockup?.screens?.length
-      ? task.mockup.screens
-          .map(s => `### Écran — ${s.name}\n${s.ascii}\n${s.notes ? `Style : ${s.notes}` : ''}`)
-          .join('\n\n')
-      : '(aucune interface — tâche backend / configuration)';
-
-    return `# ${task.id} : ${task.title}
-## Version : ${task.version}
+        return f"""# {task['id']} : {task.get('title', '')}
+## Version : {task.get('version', '')}
 
 ## Contexte Projet
-${task.context ?? '(à compléter)'}
+{task.get('context') or '(à compléter)'}
 
 ## User Story
-${task.userStory ?? '(à compléter)'}
+{task.get('user_story') or task.get('userStory') or '(à compléter)'}
 
 ## Intent
-${task.intent ?? '(à compléter — pourquoi l\'utilisateur veut vraiment cette fonctionnalité)'}
+{task.get('intent') or "(à compléter — pourquoi l'utilisateur veut vraiment cette fonctionnalité)"}
 
 ## Préconditions
-${preconditions}
+{preconditions}
 
 ## Dépendances
-${deps}
+{deps}
 
 ## Fichiers à créer / modifier
-${files}
+{files}
 
 ## Critères d'acceptation
-${criteria}
+{criteria}
 
 ## Mockup UI
-${mockupSection}
+{mockup_section}
 
 ## Journal
 (vide — tâche jamais tentée)
 
 ## Statut
-${task.status}
-`;
-  }
+{task.get('status', '⬜ EN ATTENTE')}
+"""
 
-  // Parser un fichier Markdown de tâche → objet
-  parseTaskFile(taskId, version, content) {
-    const getSection = (name) => {
-      const match = content.match(new RegExp(`## ${name}\n([\\s\\S]*?)(?=\n## |$)`));
-      return match ? match[1].trim() : '';
-    };
-    // Parser les préconditions (format "- clé: valeur")
-    const preconditionsRaw = getSection('Préconditions');
-    const preconditions = {};
-    if (preconditionsRaw && preconditionsRaw !== '(aucune)') {
-      for (const line of preconditionsRaw.split('\n').filter(l => l.startsWith('- '))) {
-        const [key, ...rest] = line.replace(/^- /, '').split(':');
-        try {
-          preconditions[key.trim()] = JSON.parse(rest.join(':').trim());
-        } catch {
-          preconditions[key.trim()] = rest.join(':').trim();
+    def parse_task_file(self, task_id: str, version: str, content: str) -> dict:
+        """Parser un fichier Markdown de tâche → objet"""
+        def get_section(name: str) -> str:
+            match = re.search(rf'## {re.escape(name)}\n([\s\S]*?)(?=\n## |$)', content)
+            return match.group(1).strip() if match else ''
+
+        # Parser les préconditions
+        preconditions_raw = get_section('Préconditions')
+        preconditions: dict | None = None
+        if preconditions_raw and preconditions_raw != '(aucune)':
+            import json
+            preconditions = {}
+            for line in preconditions_raw.split('\n'):
+                if line.startswith('- '):
+                    key, _, rest = line[2:].partition(':')
+                    try:
+                        preconditions[key.strip()] = json.loads(rest.strip())
+                    except (json.JSONDecodeError, ValueError):
+                        preconditions[key.strip()] = rest.strip()
+
+        # Parser les mockups
+        mockup_raw = get_section('Mockup UI')
+        mockup: dict | None = None
+        if mockup_raw and not mockup_raw.startswith('(aucune'):
+            screens = []
+            for block in re.split(r'\n(?=### Écran — )', mockup_raw):
+                name_match = re.match(r'^### Écran — (.+)', block)
+                if not name_match:
+                    continue
+                name = name_match.group(1).strip()
+                rest = block[block.index('\n') + 1:]
+                style_match = re.search(r'\nStyle : (.+)$', rest, re.MULTILINE)
+                notes = style_match.group(1).strip() if style_match else None
+                ascii_art = rest[:rest.rfind('\nStyle :')] if style_match else rest
+                screens.append({'name': name, 'ascii': ascii_art.strip(), 'notes': notes})
+            if screens:
+                mockup = {'screens': screens}
+
+        title_match = re.match(r'^# \S+ : (.+)', content, re.MULTILINE)
+
+        return {
+            'id': task_id,
+            'version': version,
+            'title': title_match.group(1) if title_match else '',
+            'context': get_section('Contexte Projet'),
+            'user_story': get_section('User Story'),
+            'intent': get_section('Intent'),
+            'preconditions': preconditions,
+            'files_to_modify': [
+                line[2:].split(' [')[0]
+                for line in get_section('Fichiers à créer / modifier').split('\n')
+                if line.startswith('- ')
+            ],
+            'criteria': [
+                re.sub(r'^- \[.\] ', '', line)
+                for line in get_section("Critères d'acceptation").split('\n')
+                if line.startswith('- ')
+            ],
+            'mockup': mockup,
+            'journal': get_section('Journal'),
+            'status': get_section('Statut'),
         }
-      }
-    }
-
-    // Parser les mockups (format "### Écran — NomÉcran\n[ascii]\nStyle : notes")
-    const mockupRaw = getSection('Mockup UI');
-    let mockup = null;
-    if (mockupRaw && !mockupRaw.startsWith('(aucune')) {
-      const screens = [];
-      const screenBlocks = mockupRaw.split(/\n(?=### Écran — )/);
-      for (const block of screenBlocks) {
-        const nameMatch = block.match(/^### Écran — (.+)/);
-        if (!nameMatch) continue;
-        const name = nameMatch[1].trim();
-        const rest = block.slice(block.indexOf('\n') + 1);
-        const styleMatch = rest.match(/\nStyle : (.+)$/m);
-        const notes = styleMatch?.[1]?.trim() ?? null;
-        const ascii = styleMatch
-          ? rest.slice(0, rest.lastIndexOf('\nStyle :')).trim()
-          : rest.trim();
-        screens.push({ name, ascii, notes });
-      }
-      if (screens.length > 0) mockup = { screens };
-    }
-
-    return {
-      id: taskId,
-      version,
-      title: content.match(/^# \S+ : (.+)/m)?.[1] ?? '',
-      context: getSection('Contexte Projet'),
-      userStory: getSection('User Story'),
-      intent: getSection('Intent'),
-      preconditions: Object.keys(preconditions).length > 0 ? preconditions : null,
-      filesToModify: getSection('Fichiers à créer / modifier')
-        .split('\n')
-        .filter(l => l.startsWith('- '))
-        .map(l => l.replace(/^- /, '').split(' [')[0]),
-      criteria: getSection("Critères d'acceptation")
-        .split('\n')
-        .filter(l => l.startsWith('- '))
-        .map(l => l.replace(/^- \[.\] /, '')),
-      mockup,
-      journal: getSection('Journal'),
-      status: getSection('Statut'),
-    };
-  }
-}
 ```
 
 ## Critères de Validation
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| 1 | `nextTaskId` génère TASK-001, TASK-002... séquentiellement | ⬜ |
-| 2 | `createTask` écrit le fichier Markdown ET met à jour `progress.json` | ⬜ |
-| 3 | `markDone` déplace l'ID de `pending` vers `done` | ⬜ |
-| 4 | `deferTask` ajoute une entrée dans le champ Journal du fichier | ⬜ |
-| 4b | `appendJournal` remplace correctement `(vide — tâche jamais tentée)` à la première entrée | ⬜ |
-| 4c | `appendJournal` appende correctement une 2ème entrée sous la première | ⬜ |
-| 4d | `appendJournal` fonctionne que `## Statut` soit précédé d'une ou deux lignes vides | ⬜ |
-| 5 | `parseTaskFile` extrait correctement toutes les sections dont `intent` et `preconditions` | ⬜ |
-| 6 | `renderTaskFile` inclut les sections `## Intent` ET `## Préconditions` dans le Markdown | ⬜ |
-| 7 | `parseTaskFile` retourne `preconditions: null` si la section est absente ou vide | ⬜ |
-| 8 | Tests unitaires couvrent le cycle complet d'une tâche | ⬜ |
-| 9 | `renderTaskFile` inclut la section `## Mockup UI` dans tous les fichiers générés | ⬜ |
-| 10 | Si `task.mockup` est null ou vide, la section affiche `(aucune interface — tâche backend / configuration)` | ⬜ |
-| 11 | `parseTaskFile` extrait correctement `mockup.screens[].name`, `.ascii`, `.notes` | ⬜ |
-| 12 | `parseTaskFile` retourne `mockup: null` si la section mockup commence par `(aucune` | ⬜ |
+| 1 | `next_task_id` génère TASK-001, TASK-002... séquentiellement | ⬜ |
+| 2 | `create_task` écrit le fichier Markdown ET met à jour `progress.json` | ⬜ |
+| 3 | `mark_done` déplace l'ID de `pending` vers `done` | ⬜ |
+| 4 | `defer_task` ajoute une entrée dans le champ Journal du fichier | ⬜ |
+| 4b | `append_journal` remplace `(vide — tâche jamais tentée)` à la première entrée | ⬜ |
+| 4c | `append_journal` appende correctement une 2ème entrée sous la première | ⬜ |
+| 5 | `parse_task_file` extrait correctement toutes les sections dont `intent` et `preconditions` | ⬜ |
+| 6 | `render_task_file` inclut les sections `## Intent`, `## Préconditions`, `## Mockup UI` | ⬜ |
+| 7 | `parse_task_file` retourne `preconditions: None` si la section est absente ou vide | ⬜ |
+| 8 | `parse_task_file` retourne `mockup: None` si la section commence par `(aucune` | ⬜ |
+| 9 | Tests unitaires couvrent le cycle complet d'une tâche | ⬜ |

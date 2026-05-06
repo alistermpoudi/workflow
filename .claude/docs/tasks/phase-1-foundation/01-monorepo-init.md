@@ -2,24 +2,30 @@
 
 ## Objectif
 
-Créer la structure complète du projet avec les bons outils de développement : `package.json`, structure `src/`, configuration ESLint, Vitest pour les tests, et les fichiers de config nécessaires.
+Créer la structure complète du projet avec les bons outils de développement Python : `pyproject.toml`, structure `src/workflow/`, configuration Ruff, Pytest, et les fichiers de config nécessaires.
 
 ## Fichiers à Créer
 
 ```
 workflow/
-├── package.json
-├── eslint.config.js
-├── vitest.config.js
-├── .nvmrc
+├── pyproject.toml
+├── .python-version          (contient "3.12")
+├── .gitignore
 ├── bin/
-│   └── .gitkeep        (workflow-mcp.js ajouté en Phase 4)
+│   └── .gitkeep             (workflow-mcp ajouté en Phase 4)
 ├── src/
-│   ├── core/           (dossiers vides avec .gitkeep)
-│   ├── phases/
-│   ├── tools/
-│   ├── interfaces/
-│   └── llm/
+│   └── workflow/
+│       ├── __init__.py
+│       ├── core/
+│       │   └── __init__.py
+│       ├── phases/
+│       │   └── __init__.py
+│       ├── tools/
+│       │   └── __init__.py
+│       ├── interfaces/
+│       │   └── __init__.py
+│       └── llm/
+│           └── __init__.py
 └── tests/
     └── unit/
         └── .gitkeep
@@ -27,85 +33,118 @@ workflow/
 
 ## Implémentation
 
-### `package.json`
+### `pyproject.toml`
 
-```json
-{
-  "name": "workflow",
-  "version": "0.1.0",
-  "description": "Agent de code avec mémoire projet persistante",
-  "type": "module",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint src/ tests/",
-    "build:validate": "npm run lint && npm test"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "@octokit/rest": "^21.0.0",
-    "chalk": "^5.3.0",
-    "chokidar": "^4.0.0",
-    "zod": "^3.22.0"
-  },
-  "devDependencies": {
-    "@antfu/eslint-config": "^3.0.0",
-    "eslint": "^9.0.0",
-    "vitest": "^2.0.0"
-  },
-  "engines": {
-    "node": ">=22.0.0"
-  }
-}
+```toml
+[project]
+name = "workflow"
+version = "0.1.0"
+description = "Agent de code avec mémoire projet persistante"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40.0",
+    "litellm>=1.40.0",
+    "mcp>=1.0.0",
+    "aiosqlite>=0.20.0",
+    "aiofiles>=24.0.0",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "watchfiles>=0.24.0",
+    "pyyaml>=6.0.0",
+    "pydantic>=2.0.0",
+    "fastembed>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+workflow = "workflow.interfaces.cli:app"
+workflow-mcp = "workflow.interfaces.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["workflow"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 ```
 
-### `vitest.config.js`
-
-```javascript
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['tests/**/*.test.js'],
-    coverage: {
-      reporter: ['text', 'lcov'],
-    },
-  },
-});
-```
-
-### `eslint.config.js`
-
-```javascript
-import antfu from '@antfu/eslint-config';
-
-export default antfu({
-  type: 'lib',
-  typescript: false,
-  stylistic: {
-    indent: 2,
-    quotes: 'single',
-    semi: true,
-  },
-});
-```
-
-### `.nvmrc`
+### `.python-version`
 
 ```
-22
+3.12
+```
+
+### `.gitignore`
+
+```
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.ruff_cache/
+.pytest_cache/
+dist/
+*.egg-info/
+.env
+*.db
+*.db-journal
+*.db-wal
+```
+
+## Commandes de base
+
+```bash
+# Installer uv (si pas encore fait)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Créer l'environnement et installer les dépendances
+uv sync --extra dev
+
+# Lancer les tests
+uv run pytest
+
+# Linter
+uv run ruff check src/ tests/
+
+# Formatter
+uv run ruff format src/ tests/
+
+# Build + validate (équivalent npm run build:validate)
+uv run ruff check src/ tests/ && uv run pytest
 ```
 
 ## Critères de Validation
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| 1 | `npm install` s'exécute sans erreur | ⬜ |
-| 2 | `npm run lint` passe sur les dossiers src/ et tests/ vides | ⬜ |
-| 3 | `npm test` s'exécute (0 tests = OK pour cette tâche) | ⬜ |
-| 4 | Structure de dossiers correcte | ⬜ |
+| 1 | `uv sync --extra dev` s'exécute sans erreur | ⬜ |
+| 2 | `uv run ruff check src/ tests/` passe sans erreur | ⬜ |
+| 3 | `uv run pytest` s'exécute (0 tests = OK pour cette tâche) | ⬜ |
+| 4 | Structure de dossiers correcte avec `__init__.py` dans chaque module | ⬜ |
+| 5 | `workflow --help` affiche l'aide (après Phase 3) | ⬜ |
