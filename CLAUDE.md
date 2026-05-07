@@ -8,25 +8,37 @@ Ce fichier contient toutes les instructions et le contexte nécessaires pour tra
 
 ## 🎯 Qu'est-ce que Workflow ?
 
-**Workflow** est un agent de code conçu pour les développeurs freelance et toute personne souhaitant créer une application mobile, desktop ou web. Sa particularité fondamentale : il ne dépend **jamais du contexte de conversation** pour se souvenir du projet.
+**Workflow** est un agent de code pour freelance et développeur indépendant qui **se souvient et accumule de l'expérience**, comme un humain qui a fait 30 projets et applique ses leçons.
 
 ### Le Problème à Résoudre
 
-Les agents de code actuels (Claude Code, Cursor, Codex, etc.) souffrent d'un défaut structurel : ils vivent dans le contexte de conversation. Quand ce contexte sature, l'agent perd le fil du projet. L'utilisateur doit tout réexpliquer depuis zéro.
+Les agents de code actuels (Cursor, Claude Code, Codex) souffrent de **deux défauts structurels** :
 
-**Workflow résout exactement ce problème.**
+1. **Ils vivent dans le contexte de conversation.** Quand le contexte sature, l'agent perd le fil. L'utilisateur réexplique tout depuis zéro.
+2. **Ils oublient tout au projet suivant.** Aucune capitalisation d'expérience. Un dev senior qui a résolu le même problème 10 fois ne le ré-aborde pas comme un junior — l'agent, si.
+
+**Workflow résout les deux.**
 
 ### La Solution
 
-Toute la connaissance projet est persistée dans des fichiers structurés dans un dossier `.workflow/` à la racine du projet cible. Au démarrage de chaque session, Workflow lit ces fichiers et sait exactement où il en est — sans aucune réexplication.
+Deux mémoires distinctes, persistantes :
 
-### Les 5 Piliers de l'Indispensabilité
+1. **Mémoire projet** (`.workflow/` dans le projet) — vision, fonctionnalités, stack, décisions, état d'avancement, contexts actifs.
+2. **Mémoire institutionnelle** (`~/.workflow/contexts/` global) — patterns appris à travers tous les projets, organisés en **contexts spécialisés** (mobile.flutter, web.nextjs, backend.fastapi, etc.). Workflow devient plus intelligent à chaque projet.
 
-1. **Daemon Heartbeat** — tourne en arrière-plan, envoie un briefing matin, surveille les builds, propose la prochaine tâche automatiquement
-2. **Présence partout** — CLI, Telegram, VS Code extension (sidebar + annotations inline), GitHub integration
-3. **Cerveau d'équipe** — `.workflow/` partagé via git, `workflow onboard` pour onboarding instantané des nouveaux devs, détection de conflits de décisions entre devs
-4. **Source de vérité unique** — `workflow doc generate` (README + ARCHITECTURE.md + CHANGELOG auto), `workflow audit` (divergence code/tâches), `workflow estimate` (basé sur temps réel par tâche)
-5. **Écosystème** — WorkflowLibrary cross-projet, workflow-hub (marketplace de patterns communautaire)
+> **Thèse différenciatrice** : Cursor / Claude Code sont des "assistants experts dans la session". Workflow est un **PM technique avec mémoire institutionnelle**, organisé en cabinet de devs spécialisés.
+
+### Les 7 Piliers Load-Bearing
+
+1. **Protocole `.workflow/`** — schéma versionné lisible par tous les clients (CLI, VS Code, Telegram, web, MCP). Pas un dossier ad-hoc.
+2. **Skills + Curator + 4 sources d'apprentissage** — `auto_retry` (échec→succès), `user_explicit` (`workflow teach`), `in_flow_correction` (Ctrl+T), `project_ingestion` (`learn-from`). Niveau `USER_OVERRIDE` au-dessus de HIGH.
+3. **Multi-LLM par rôle** — `reasoning` (Opus pour Discovery/Spec/Arch), `code_generation` (DeepSeek pour ExecutionLoop), `fast` (Haiku pour scoring), `curator` (Sonnet pour consolidation), `compression` (Haiku pour résumés).
+4. **Décisions actives + graphe rétro-propageant** — `decisions.log` + `decisions-graph.json` avec relations CONTRADICTS/DEPENDS_ON/SUPERSEDES/REFINES. Détecte automatiquement les contradictions et propage aux tâches en cours.
+5. **CodePatcher chirurgical** — search/replace blocks dès le départ. Jamais de régénération de fichier entier.
+6. **MCP Server comme surface primaire** — toutes les autres surfaces (CLI, VS Code, Telegram, REST) sont des clients du protocole MCP avec `AllowedCommandsPolicy` à 3 niveaux.
+7. **Contexts spécialisés** — hiérarchie `_global → mobile → mobile.flutter`, templates bundled, héritage, exportables/installables. Workflow devient un **cabinet de devs spécialisés**.
+
+> Détail complet : `.claude/docs/tasks/phase-0-vision/02-pillars.md`
 
 ---
 
@@ -34,12 +46,12 @@ Toute la connaissance projet est persistée dans des fichiers structurés dans u
 
 | Mode | Description | Qui réfléchit |
 |------|-------------|---------------|
-| **Workflow Agent** | Agent autonome complet — CLI interactive ou Telegram | Workflow (Claude API) |
+| **Workflow Agent** | Agent autonome complet — CLI interactive ou Telegram | Workflow (LiteLLM multi-modèles) |
 | **Workflow Core** | Gestionnaire de projet pur exposé via MCP | L'agent hôte (Claude Code, Cursor, etc.) |
 
-Dans les deux cas : même cerveau, mêmes fichiers `.workflow/`, mêmes outils. Seule la couche d'interaction change.
+Dans les deux cas : même cerveau, mêmes fichiers `.workflow/`, mêmes contexts, mêmes outils. Seule la couche d'interaction change.
 
-> ⚠️ **Stratégie de build** : Commencer par **Workflow Core (MCP)** — c'est le chemin le plus court vers quelque chose d'utilisable. Workflow Core branché sur Claude Code donne immédiatement de la valeur, avant même que le Workflow Agent autonome existe.
+> ⚠️ **Stratégie de build** : Commencer par **Workflow Core (MCP)** — c'est le chemin le plus court vers quelque chose d'utilisable. Workflow Core branché sur Claude Code donne immédiatement de la valeur, avant même que le Workflow Agent autonome existe. **Seuil dogfooding = fin Phase 6.**
 
 ---
 
@@ -47,138 +59,218 @@ Dans les deux cas : même cerveau, mêmes fichiers `.workflow/`, mêmes outils. 
 
 ```
 workflow/
-├── CLAUDE.md               # CE FICHIER
-├── pyproject.toml          # uv + hatchling + dépendances
-├── .python-version         # "3.12"
+├── CLAUDE.md                       # CE FICHIER
+├── pyproject.toml                  # uv + hatchling + dépendances
+├── .python-version                 # "3.12"
+├── workflow.config.yaml            # Routage LLM par rôle (Pilier 3)
 ├── .gitignore
 │
-├── src/
-│   └── workflow/
-│       ├── core/               # Cerveau — indépendant de l'interface
-│       │   ├── workflow_agent.py       # Orchestrateur principal (Agent mode)
-│       │   ├── project_memory.py       # Lecture/écriture .workflow/
-│       │   ├── phase_manager.py        # Orchestre les 5 phases
-│       │   ├── decisions_log.py        # Journal actif (SQLite FTS5) — consulté avant chaque tâche
-│       │   ├── context_manager.py      # Hiérarchie de chargement contexte LLM
-│       │   ├── sync_checker.py         # State drift + vérif branche Git
-│       │   ├── skill_manager.py        # Skills réutilisables cross-projet (Hermes-inspired)
-│       │   ├── daemon_heartbeat.py     # Daemon proactif (briefing + surveillance)
-│       │   └── watch_mode.py           # Annotation passive (questions sans interruption)
-│       │
-│       ├── phases/             # Les 5 phases projet
-│       │   ├── discovery_phase.py      # Phase 1 : questions ciblées → vision.md + design.json
-│       │   ├── specification_phase.py  # Phase 2 : fonctionnalités → features.json
-│       │   ├── architecture_phase.py   # Phase 3 : stack + TASK-001/002 + allowed_commands
-│       │   ├── validation_phase.py     # Phase 4 : tâches détaillées → versions/
-│       │   └── execution_phase.py      # Phase 5 : code → validate → corriger → done
-│       │
-│       ├── tools/              # Outils techniques
-│       │   ├── execution_loop.py       # build_validate générique → test → correction (+ skill auto-create)
-│       │   ├── filesystem.py           # WorkflowPaths + opérations fichiers
-│       │   ├── git_manager.py          # asyncio.create_subprocess_exec
-│       │   ├── task_manager.py         # CRUD sur les fichiers TASK-XXX.md
-│       │   ├── version_manager.py      # Cycle de vie versions + pilote GitManager
-│       │   ├── code_patcher.py         # Diffs chirurgicaux + fallback AST (v1.5)
-│       │   ├── code_indexer.py         # Index JSON + variantes LLM + ripgrep (v1.5)
-│       │   └── workflow_library.py     # Patterns cross-projet (v1.5)
-│       │
-│       ├── interfaces/         # Couches d'interaction
-│       │   ├── cli.py                  # typer + rich + RichIO
-│       │   ├── mcp_server.py           # Workflow Core — Python mcp SDK (stdio)
-│       │   ├── telegram_bot.py         # Bot Telegram (v3)
-│       │   ├── rest_api.py             # API REST locale (v3)
-│       │   ├── github_integration.py   # Webhooks GitHub/GitLab
-│       │   └── vscode_extension/       # Extension VS Code — JavaScript/TypeScript (requis par VS Code)
-│       │
-│       └── llm/                # Abstraction LLM
-│           ├── llm_provider.py         # LiteLLM multi-modèles par rôle
-│           └── prompt_builder.py       # Prompts avec contexte projet injecté
+├── src/workflow/
+│   ├── core/                       # Cerveau cognitif — indépendant de l'interface
+│   │   ├── workflow_agent.py       # Orchestrateur mode Agent (Phase 5)
+│   │   ├── project_memory.py       # Reference impl du protocole .workflow/
+│   │   ├── phase_manager.py        # Orchestre les 6 phases (revisitables + Starter Mode)
+│   │   ├── llm_context_loader.py   # Hiérarchie + compression + scoring (renommé depuis ContextManager)
+│   │   ├── decisions_log.py        # decisions.log + index SQLite FTS5
+│   │   ├── decisions_graph.py      # Graphe + relations + détection contradictions + rétro-propagation
+│   │   ├── skill_manager.py        # Skills cross-projet (CRUD + recherche)
+│   │   ├── skill_curator.py        # Consolidation périodique via LLM role='curator'
+│   │   ├── teach_system.py         # workflow teach / avoid + USER_OVERRIDE
+│   │   ├── in_flow_corrector.py    # Ctrl+T → skill USER_OVERRIDE → retry
+│   │   ├── context_registry.py     # Contexts hiérarchiques + héritage + templates (Pilier 7)
+│   │   ├── onboarding_manager.py   # workflow onboard
+│   │   ├── sync_checker.py         # State drift + branche Git + protocole + contradictions
+│   │   └── daemon_heartbeat.py     # Daemon proactif (briefings + auto-curator)
+│   │
+│   ├── phases/                     # Les 6 phases projet (revisitables)
+│   │   ├── discovery_phase.py      # Questions → vision.md
+│   │   ├── specification_phase.py  # Propositions → features.json
+│   │   ├── design_system_phase.py  # Style → design.json + screen-flow.md
+│   │   ├── architecture_phase.py   # Stack → tech-stack.json + TASK-001/002
+│   │   ├── validation_phase.py    # Tâches → versions/ (mockups + Active Contexts)
+│   │   └── execution_phase.py      # Sélection tâche prête → délègue à ExecutionLoop
+│   │
+│   ├── tools/                      # Outils techniques
+│   │   ├── filesystem.py           # WorkflowPaths + opérations async + atomic write
+│   │   ├── git_manager.py          # asyncio.create_subprocess_exec
+│   │   ├── task_manager.py         # CRUD TASK-XXX.md + progress.json
+│   │   ├── version_manager.py     # Cycle de vie versions, pilote GitManager
+│   │   ├── code_patcher.py         # Diffs chirurgicaux + tree-sitter (Phase 2 — pas v1.5)
+│   │   ├── execution_loop.py       # generate_patch → apply → validate → retry → skill auto
+│   │   ├── code_indexer.py         # Index symboles + ripgrep (Phase 9)
+│   │   ├── parallel_executor.py    # Git worktrees pour tâches indépendantes (Phase 7)
+│   │   ├── project_ingester.py     # workflow learn-from (Phase 9)
+│   │   ├── watch_mode.py           # watchfiles → .workflow/questions/ (Phase 7)
+│   │   ├── conflict_resolver.py    # Conflits décisions entre devs (Phase 8)
+│   │   ├── workflow_library.py     # Patterns cross-projet (Phase 9)
+│   │   └── breaking_change_detector.py  # Phase 9
+│   │
+│   ├── interfaces/                 # Couches d'interaction (clients du protocole MCP)
+│   │   ├── cli.py                  # typer + rich + RichIO (Phase 5)
+│   │   ├── mcp_server.py           # SDK Python officiel (Phase 6) — surface primaire
+│   │   ├── allowed_commands_policy.py  # Whitelist + apprentissage (Phase 6)
+│   │   ├── mcp_client.py           # Client MCP réutilisable (Phase 8)
+│   │   ├── github_integration.py   # PR mergée → tâche DONE (Phase 8)
+│   │   ├── rest_api.py             # FastAPI local (Phase 8)
+│   │   ├── telegram_bot.py         # Client MCP wrapper (Phase 8)
+│   │   └── vscode_extension/       # TypeScript — VS Code API (Phase 8)
+│   │
+│   ├── llm/                        # Abstraction LLM
+│   │   ├── llm_provider.py         # LiteLLM multi-modèles par rôle
+│   │   └── prompt_builder.py       # Prompts avec contexte + skills + decisions injectés
+│   │
+│   ├── protocol/                   # Pilier 1 — schéma versionné
+│   │   ├── version.py              # SCHEMA_VERSION
+│   │   ├── validator.py            # Validation JSON Schema
+│   │   ├── schemas/                # JSON Schemas (project, features, tech-stack, decisions-graph...)
+│   │   └── migrations/             # Migrations entre versions de schéma
+│   │
+│   └── templates/contexts/         # Pilier 7 — templates bundled
+│       ├── _global/
+│       ├── mobile/
+│       ├── mobile.flutter/
+│       ├── mobile.react-native/
+│       ├── web/
+│       ├── web.nextjs/
+│       ├── web.vite-react/
+│       ├── desktop/
+│       ├── desktop.electron/
+│       ├── desktop.tauri/
+│       ├── backend/
+│       ├── backend.fastapi/
+│       └── backend.express/
 │
 └── .claude/
-    ├── PROGRESS.md         # Suivi de progression — lire en début de session
+    ├── PROGRESS.md                 # Suivi de progression — lire en début de session
     └── docs/
-        └── tasks/          # Tâches détaillées par phase de build
+        ├── tasks/                  # Tâches détaillées par phase de build (0 à 10)
+        │   ├── INDEX.md            # Vue d'ensemble
+        │   ├── phase-0-vision/
+        │   ├── phase-1-foundation/
+        │   ├── phase-2-cognitive/
+        │   ├── phase-3-execution-engine/
+        │   ├── phase-4-project-phases/
+        │   ├── phase-5-agent-cli/
+        │   ├── phase-6-mcp/
+        │   ├── phase-7-proactive/
+        │   ├── phase-8-surfaces/
+        │   ├── phase-9-robustness/
+        │   └── phase-10-polish/
+        └── PROTOCOL.md             # Spec publique du protocole .workflow/
 ```
 
 ---
 
-## 📐 Structure `.workflow/` (ce que Workflow génère dans les projets cibles)
+## 📐 Structure `.workflow/` (générée dans les projets cibles)
 
 ```
 .workflow/
-├── project.json            # Métadonnées projet
-├── vision.md               # Vision produit (sortie Phase 1)
-├── features.json           # Fonctionnalités validées (sortie Phase 2)
-├── tech-stack.json         # Stack + build_validate + test + allowed_commands
-├── design.json             # Style visuel — style, couleurs, références, notes (sortie DiscoveryPhase)
-├── code-index.json         # Index fonctions/classes/exports (mis à jour en continu)
-├── decisions.log           # Journal actif des décisions techniques
+├── project.json                    # active_contexts: [_global, mobile, mobile.flutter] + schema_version
+├── vision.md                       # Sortie Discovery
+├── features.json                   # Sortie Specification
+├── tech-stack.json                 # Sortie Architecture (build_validate, test, allowed_commands)
+├── design.json                     # Sortie DesignSystem (style + couleurs + références)
+├── code-index.json                 # Index symboles (Phase 9)
+├── decisions.log                   # Journal texte brut — lisible humain
+├── decisions-graph.json            # Relations + contradictions + niveaux de confiance
+├── allowed-commands.json           # Whitelist + apprentissage (Pilier 6)
+├── skills/                         # Skills strictement projet
+│   └── *.md
+├── questions/                      # WatchMode — questions en attente
+│   └── YYYY-MM-DD-Q001.md
+├── briefings/                      # DaemonHeartbeat — briefings quotidiens
+│   └── YYYY-MM-DD.md
 └── versions/
     ├── v1.0/
-    │   ├── meta.json       # titre, description, statut, branche git
-    │   ├── tasks/
-    │   │   ├── TASK-001.md
-    │   │   ├── TASK-002.md
-    │   │   └── ...
-    │   └── progress.json
-    ├── v1.5/
-    └── v2.0/
+    │   ├── meta.json               # { title, status, branch, created_at }
+    │   ├── progress.json           # { done, pending, failed, deferred }
+    │   └── tasks/
+    │       ├── TASK-001.md         # Setup + linter (systématique)
+    │       ├── TASK-002.md         # Tests + smoke test (systématique)
+    │       └── TASK-003.md
+    └── v1.5/
+```
+
+**Et au niveau global** (`~/.workflow/`) :
+```
+~/.workflow/
+├── config.yaml                     # Routage LLM par défaut
+├── ingestions.log                  # Audit trail des project ingestions
+└── contexts/                       # Pilier 7 — expertises spécialisées (lazy)
+    ├── _global/                    # Universal — créé au boot
+    │   ├── config.yaml
+    │   ├── skills/
+    │   ├── decisions.log
+    │   └── teach.md                # USER_OVERRIDE rules
+    ├── mobile/                     # Hérite _global
+    │   ├── flutter/                # Hérite mobile
+    │   └── react-native/
+    └── web/
+        └── nextjs/
 ```
 
 ---
 
 ## 🛠️ Stack Technique
 
-| Composant | Choix | Raison |
-|-----------|-------|--------|
-| Runtime | Python 3.12+ | Écosystème IA riche (LiteLLM, embeddings, tree-sitter) |
-| Package manager | `uv` | Rapide, lockfile, gestion Python version |
-| LLM | LiteLLM (multi-modèles par rôle) | Unifie Claude, DeepSeek, Llama, Mistral, Ollama... |
-| Modèles | Claude Opus (reasoning), DeepSeek Coder (code), Claude Haiku (fast) | Rôle optimal par tâche |
-| CLI | `typer` + `rich` | Commandes + affichage coloré (`RichIO`) |
-| MCP | `mcp` Python SDK (Anthropic officiel) | Transport stdio — Claude Code, Cursor |
-| Base de données | `aiosqlite` + SQLite FTS5 | DecisionsLog async avec recherche plein-texte |
+| Composant | Choix | Notes |
+|-----------|-------|-------|
+| Runtime | Python | 3.12+ |
+| Package manager | `uv` | Lockfile + gestion Python version |
+| LLM (multi-rôle) | `litellm` | Routage par rôle — Claude, DeepSeek, Ollama |
+| Modèle reasoning | `claude-opus-4-7` | Discovery, Specification, Architecture |
+| Modèle code | `deepseek-coder-v2` | ExecutionLoop — best HumanEval |
+| Modèle fast | `claude-haiku-4-5` | Scoring décisions, préconditions, contradictions |
+| Modèle curator | `claude-sonnet-4-6` | Consolidation skills + project ingestion |
+| Modèle compression | `claude-haiku-4-5` | Résumés de session |
+| MCP | `mcp` (SDK Python officiel Anthropic) | Transport stdio |
+| CLI | `typer` + `rich` (RichIO) | Couleurs, panels, prompts |
+| Base de données | `aiosqlite` + SQLite FTS5 | DecisionsLog avec recherche plein-texte |
 | Fichiers async | `aiofiles` + `pathlib` | Opérations non-bloquantes |
-| Analyse AST | `tree-sitter` Python | Parsing multi-langage robuste (v1.5) |
-| Recherche code | `ripgrep` (subprocess) | Plus fiable qu'un regex custom sur l'index JSON |
-| Fichiers projet | Markdown + JSON | Lisibles par humain ET machine |
-| Config | `workflow.config.yaml` | Format YAML, lecture par `pyyaml` |
-| Tests | `pytest` + `pytest-asyncio` | Standard Python, async natif |
-| Linter | `ruff` | Linter + formatter ultra-rapide |
-| Watcher fichiers | `watchfiles` | WatchMode — surveillance modifications (remplace chokidar) |
-| Skills | `SkillManager` + SKILL.md | Hermes-inspired — accumulation d'expérience cross-projet |
-| VS Code | TypeScript (requis VS Code) | Extension sidebar + annotations inline |
-| GitHub | `httpx` + webhooks | Webhooks + sync PR/issues + Zero-to-PR |
-| Telegram | `python-telegram-bot` | Bot Telegram (v3) |
-| Parallel exec | `asyncio.gather` + `git worktree` | ParallelExecutor — tâches indépendantes en parallèle |
+| AST (CodePatcher) | `tree-sitter` Python + grammaires | **Dès Phase 2** — pas v1.5 |
+| Recherche code | `ripgrep` (subprocess) | Index + recherche fast |
+| Watch mode | `watchfiles` | Surveillance fichiers |
+| Git | `asyncio.create_subprocess_exec` | GitManager complet |
+| YAML | `pyyaml` | Skills frontmatter, config |
+| Tests | `pytest` + `pytest-asyncio` | — |
+| Linter | `ruff` | Lint + format |
+| Type check | `mypy` strict | — |
+| VS Code extension | TypeScript (VS Code API) | Client MCP — Phase 8 |
+| Telegram | `python-telegram-bot` | Client MCP — Phase 8 |
+| GitHub | `PyGithub` ou `octokit-py` | Client MCP — Phase 8 |
+| REST API | FastAPI + uvicorn | Client MCP — Phase 8 |
 
 ---
 
-## 📋 Les 8 Phases de Build
+## 📋 Les 11 Phases de Build (0 à 10)
 
-| Phase | Nom | Scope | Roadmap cible |
-|-------|-----|-------|---------------|
-| 0 | Vision & Architecture | Documentation | ✅ Complété |
-| 1 | Foundation | `ProjectMemory`, `DecisionsLog`, `SyncChecker`, `TaskManager`, `FileSystem`, `GitManager` | MVP |
-| 2 | Les 7 Phases Projet | `DiscoveryPhase` → `DesignSystemPhase` → `ExecutionPhase` + `PhaseManager` | MVP |
-| 3 | Exécution de Base | `ExecutionLoop` (TDD + Security + ArchReview + DepIntel), `ParallelExecutor`, CLI, Daemon, Watch | MVP |
-| 4 | MCP Server (Workflow Core) | `MCPServer.py` — tous les outils MCP exposés (Python mcp SDK) | MVP |
-| 5 | Présence & Intégrations | VS Code Extension, GitHub Integration, Team Onboarding | V1 |
-| 6 | Robustesse | `CodePatcher`, `CodeIndexer`, `ContextManager` avancé, `WorkflowLibrary` | V1.5 |
-| 7 | Génération & Audit | `workflow doc generate`, `workflow audit`, `workflow estimate` | V2 |
-| 8 | Écosystème | Telegram, REST API, CLI Ink, workflow-hub (marketplace) | V3 |
+| Phase | Nom | Piliers couverts | Seuil |
+|-------|-----|------------------|-------|
+| 0 | Vision & Architecture | — (cadre conceptuel) | — |
+| 1 | Protocole & Persistence | 1, 2 (foundation), 4, 7 | — |
+| 2 | Cerveau Cognitif | 3, 5 | — |
+| 3 | Boucle d'Exécution | 2 (sources auto + teach), 5 | — |
+| 4 | Phases Projet (revisitables) | Support | — |
+| 5 | Agent & CLI | 6 (préparation), 2 (in-flow) | — |
+| 6 | **MCP Server** ⭐ | 6 (complet) | **DOGFOODING START** |
+| 7 | Couches Proactives | Support 2, 4 | — |
+| 8 | Surfaces Tierces | 6 (achevé) | — |
+| 9 | Robustesse + Project Ingestion | Renforce 1, étend 2 | — |
+| 10 | Polish & Différenciateurs | Met en valeur tous les piliers | — |
+
+> Détails : `.claude/docs/tasks/INDEX.md` + chaque `phase-X-*/INDEX.md`
 
 ---
 
 ## 🔑 Concepts Clés Non-Négociables
 
-### 1. La Hiérarchie de Chargement de Contexte
+### 1. La Hiérarchie de Chargement de Contexte (`LLMContextLoader`)
 
-À chaque démarrage/reprise, `ContextManager` charge dans cet ordre strict :
+À chaque démarrage/reprise, charge dans cet ordre strict :
 
 ```
 Système (toujours — ~500 tokens max) :
-  project.json + vision.md résumé + tech-stack.json
+  project.json + vision.md résumé + tech-stack.json + active_contexts
 
 Version active (au switch) :
   meta.json + progress.json (tâches done/pending, sans le contenu)
@@ -186,35 +278,44 @@ Version active (au switch) :
 Tâche courante (au start task) :
   TASK-XXX.md complet
   Fichiers listés dans "Fichiers à modifier" (lecture sélective)
-  5 dernières entrées du decisions.log
+  Skills depuis les contexts actifs (du plus spécifique au plus général)
+  Avoidances depuis teach.md des contexts actifs
+  Décisions scorées (Score = similarité × récence × scope × confiance ; budget 2000 tokens)
 
 On-demand :
-  CodeIndexer.search() pour fonctions pertinentes
-  Erreur de build si en boucle de correction
+  CodeIndexer.query() pour fonctions pertinentes (Phase 9)
+  ContextManager.loadOnDemand(query) pour ripgrep
 ```
 
 **Ne jamais charger l'intégralité du projet en contexte** — c'est exactement le problème qu'on résout.
 
-### 2. Le `decisions.log` est Actif, pas Passif
+### 2. Le `decisions-graph` est Actif, pas Passif
 
-Workflow **consulte** le log avant de coder une tâche impliquant des choix déjà faits (ORM, auth, DB, framework). Il ne fait pas que l'écrire.
-
-```
-Workflow : "J'allais utiliser TypeORM, mais le decisions.log indique Prisma
-           choisi le 12 mars. Je code avec Prisma."
-```
-
-### 3. Règle de Granularité des Tâches
+Workflow **consulte** le log avant de coder une tâche impliquant des choix déjà faits (ORM, auth, DB, framework). Et **détecte automatiquement** les contradictions via LLM `role='fast'`. Quand le dev change une décision, **rétro-propagation** vers les tâches `pending` impactées (annotation Journal).
 
 ```
-1 tâche Workflow = 1 PR potentielle = max 4h de travail = max 3 fichiers créés/modifiés
+Workflow : "J'allais utiliser TypeORM, mais decisions-graph indique Prisma
+           choisi le 12 mars (DEC-001, USER_OVERRIDE).
+           Je code avec Prisma."
 ```
 
-Si une tâche dépasse ces seuils, `ValidationPhase` la découpe automatiquement avant validation par l'utilisateur.
+### 3. Règle de Granularité Sémantique des Tâches
 
-### 4. `allowed_commands` — Sécurité MCP
+```
+1 tâche Workflow = 1 PR mergeable atomiquement avec ses tests
+```
 
-`MCPServer.py` **ne peut exécuter que les commandes listées** dans `tech-stack.json#allowed_commands`. Toute autre commande est rejetée et loggée. Aucune exception.
+Le nombre de fichiers et la durée sont des indicateurs, pas des règles strictes. Le critère réel est la **cohérence atomique du diff**.
+
+### 4. `AllowedCommandsPolicy` — Sécurité MCP à 3 Niveaux
+
+`MCPServer` exécute via `AllowedCommandsPolicy.authorize(command)` :
+- **Niveau 1** : built-in safe (git status, ls, pytest, etc.) → ALLOW direct
+- **Niveau 2** : project allowed (`.workflow/allowed-commands.json`) → ALLOW si match
+- **Niveau 3** : prompt utilisateur (apprentissage : O / P (préfixe) / E (exact) / N / B (bannir))
+- **ALWAYS_DENIED** hardcodé : `rm -rf /`, `sudo rm`, `chmod 777`, `curl | sh`, `dd if=`. Non-overridable.
+
+En CI/non-interactif, les commandes inconnues sont DENY par défaut.
 
 ### 5. Versioning Git — Règle "No Stash"
 
@@ -231,11 +332,14 @@ Chaque `TASK-XXX.md` doit pouvoir être exécuté **sans historique de conversat
 ## Contexte Projet
 Application, stack, phase courante
 
+## Active Contexts
+[_global, mobile, mobile.flutter]
+
 ## User Story
 EN TANT QUE / JE VEUX / AFIN DE
 
 ## Intent
-Pourquoi l'utilisateur veut vraiment cette fonctionnalité — guide les décisions d'implémentation ambiguës.
+Pourquoi l'utilisateur veut vraiment cette fonctionnalité — guide les décisions ambiguës.
 
 ## Préconditions
 - filesExist: [...]
@@ -247,34 +351,27 @@ Pourquoi l'utilisateur veut vraiment cette fonctionnalité — guide les décisi
 - TASK-002 ✅
 
 ## Fichiers à créer / modifier
-- src/workflow/foo.py [CRÉER]
-- src/workflow/bar.py [MODIFIER]
+- src/foo.py [CRÉER]
+- src/bar.py [MODIFIER]
 
 ## Critères d'acceptation
 - [ ] Critère 1
 - [ ] Critère 2
 
 ## Mockup UI
-
-### Écran — [Nom de l'écran]
-┌──────────────────────────────┐
-│  [contenu de l'écran]        │
-└──────────────────────────────┘
-Style : [style choisi] — [palette, typographie]
-
-[ou pour les tâches backend :]
-(aucune interface — tâche backend / configuration)
+(ASCII art conforme à design.json — ou "(aucune interface)" pour backend)
 
 ## Journal
 [date] Reportée depuis vX.X — raison : ...
-[date] Tentative partielle : fichier src/workflow/foo.py créé, manque ...
+[date] Tentative partielle : fichier src/foo.py créé, manque ...
 
 ## Statut
 ⬜ EN ATTENTE | 🔄 EN COURS | ✅ TERMINÉ | ❌ REPORTÉ
 ```
 
-> **Le champ `Journal`** est rempli automatiquement par Workflow à chaque report ou tentative partielle.
-> **Le champ `Mockup UI`** est généré automatiquement par `ValidationPhase` en respectant le style de `design.json`. Toujours présent — `(aucune interface)` pour les tâches sans UI.
+> **Le champ `Journal`** est rempli automatiquement par Workflow.
+> **Le champ `Mockup UI`** est généré par `ValidationPhase` en respectant le style de `design.json`.
+> **Le champ `Active Contexts`** est lu depuis `project.json#active_contexts`.
 
 ### 7. TASK-001 et TASK-002 sont Systématiques
 
@@ -286,29 +383,69 @@ Les deux premières tâches de toute v1.0 sont imposées par `ArchitecturePhase`
 
 ```
 SyncChecker au démarrage :
+0. Valide la conformité au protocole .workflow/ (JSON Schema)
 1. Vérifie que la branche Git = version active dans .workflow/
 2. Compare état du repo avec progress.json
 3. Détecte fichiers modifiés manuellement → soumet diff au LLM
-4. Annonce l'état exact et demande confirmation avant de reprendre
+4. Alerte si contradictions actives dans decisions-graph
+5. Annonce l'état exact et demande confirmation avant de reprendre
 ```
 
 ### 9. Le Daemon est Toujours Présent
 
-`DaemonHeartbeat` tourne en arrière-plan (launchd/systemd). Il envoie un briefing au démarrage de la journée, surveille les builds CI, et propose la prochaine tâche quand une est terminée. Il ne bloque jamais l'utilisateur.
+`DaemonHeartbeat` tourne en arrière-plan (launchd/systemd). Il :
+- Envoie un briefing au démarrage de la journée dans `.workflow/briefings/`
+- Surveille les builds CI
+- Alerte sur les contradictions du decisions-graph
+- **Lance automatiquement le `SkillCurator`** quand ≥10 nouveaux skills depuis la dernière run
+- Propose la prochaine tâche quand une est terminée
+
+Il ne bloque jamais l'utilisateur.
 
 ### 10. Watch Mode — Annotation Sans Interruption
 
-`WatchMode` observe les fichiers du projet. Quand un fichier est créé/modifié hors du scope d'une tâche, il crée un fichier question dans `.workflow/questions/`. L'utilisateur répond en éditant le fichier (oui/non/plus-tard). Zéro interruption.
+`WatchMode` (via `watchfiles`) observe les fichiers du projet. Quand un fichier est créé/modifié hors du scope d'une tâche, il crée un fichier question dans `.workflow/questions/`. L'utilisateur répond en éditant le fichier. Zéro interruption.
 
 ### 11. `workflow onboard` — Onboarding Instantané
 
-Un nouveau développeur sur le projet lance `workflow onboard`. Workflow lit tout le `.workflow/` et génère : résumé du projet, stack expliquée avec raisons, état d'avancement, les 5 décisions clés à connaître, première tâche suggérée. Objectif : autonomie en 30 secondes.
+Un nouveau développeur lance `workflow onboard`. Workflow lit tout le `.workflow/` (+ contexts actifs + skills accumulés) et génère : résumé du projet, stack expliquée, état d'avancement, 5 décisions clés HIGH-confidence, conventions équipe, prochaine tâche prête, top skills réutilisables, contradictions à connaître. **Objectif : autonomie en 30 secondes.**
 
-### 12. Design Style — Capturé Dès la Discovery
+### 12. Les 4 Sources d'Apprentissage (Pilier 2 complet)
 
-`DiscoveryPhase` demande obligatoirement le style de design souhaité (minimaliste, material, glassmorphism, néomorphisme, brutaliste, etc.) avant de terminer. Le choix est persisté dans `design.json`. `ValidationPhase` l'utilise pour générer des mockups ASCII dans chaque tâche impliquant une interface — **le développeur sait à quoi doit ressembler chaque écran avant même de coder**.
+Workflow apprend par 4 voies cumulatives, du passif au correctif :
 
-Styles disponibles : Minimaliste · Material Design · Glassmorphism · Néomorphisme · Brutaliste · Doux/Pastel · Dashboard Pro · Mobile-First · Cyberpunk · Personnalisé.
+1. **`auto_retry`** — `ExecutionLoop` corrige une erreur après retry → skill auto (`MEDIUM`)
+2. **`user_explicit`** — `workflow teach` / `workflow avoid` → skill `USER_OVERRIDE` (le plus haut)
+3. **`in_flow_correction`** — Ctrl+T pendant que l'agent code → skill `USER_OVERRIDE` + retry
+4. **`project_ingestion`** — `workflow learn-from <path>` → skills `HIGH` après review
+
+`SkillCurator` consolide périodiquement : déduplique, promeut au global les patterns confirmés, archive les skills inutilisés. Les `USER_OVERRIDE` ne sont jamais archivés sans confirmation.
+
+### 13. Les Contexts — Pilier 7
+
+Workflow n'a pas une mémoire indifférenciée — il a des **expertises spécialisées** :
+
+```
+~/.workflow/contexts/
+├── _global/                ← seul créé au boot
+├── mobile/                 ← lazy : créé au workflow init Flutter
+│   └── flutter/            ← idem (héritage de mobile)
+├── web/
+│   └── nextjs/
+└── backend/
+    └── fastapi/
+```
+
+- **Templates bundled** dans le package — instantiated lazy au `workflow init`
+- **Auto-détection** depuis `pubspec.yaml` / `package.json` / `Cargo.toml` etc.
+- **Multi-contexts actifs** par projet (`active_contexts: [_global, web, web.nextjs]`)
+- **Héritage** : skills/decisions résolus du plus spécifique au plus général
+- **Cross-context promotion** : Curator détecte un pattern présent dans 2+ contexts → propose vers le parent commun
+- **Portables** : `workflow context export mobile.flutter > my.tar.gz`
+
+### 14. Design Style — Capturé Dès Discovery, Phase Dédiée
+
+`DiscoveryPhase` demande obligatoirement le style de design (minimaliste, material, glassmorphism, néomorphisme, brutaliste, etc.). `DesignSystemPhase` (Phase 4 du build) génère `design.json` + `design-system.json` + `screen-flow.md`. `ValidationPhase` les utilise pour produire des **mockups ASCII conformes** dans chaque tâche UI.
 
 ```json
 // design.json — exemple
@@ -327,47 +464,56 @@ Styles disponibles : Minimaliste · Material Design · Glassmorphism · Néomorp
 ## 🔗 Dépendances Entre Phases de Build
 
 ```
-Phase 0 (Vision & Architecture)
+Phase 0 (Vision & Architecture — docs)
          │
          ▼
-Phase 1 (Foundation — ProjectMemory, DecisionsLog, SyncChecker, TaskManager)
+Phase 1 (Protocole & Persistence — protocol, skills, decisions-graph, contexts, sync)
          │
          ▼
-Phase 2 (Les 5 Phases Projet — Discovery → Execution)
+Phase 2 (Cerveau Cognitif — LLMProvider, PromptBuilder, LLMContextLoader, CodePatcher)
          │
          ▼
-Phase 3 (Exécution de Base — ExecutionLoop, CLI readline, DaemonHeartbeat, WatchMode)
+Phase 3 (Boucle d'Exécution — ExecutionLoop, SkillCurator, TeachSystem, extensions)
          │
          ▼
-Phase 4 (MCP Server — Workflow Core complet)
+Phase 4 (Phases Projet revisitables — PhaseManager, Discovery → Active)
          │
          ▼
-Phase 5 (Présence & Intégrations — VS Code, GitHub, Onboarding)
+Phase 5 (Agent & CLI — WorkflowAgent, CLI, InFlowCorrector)
          │
          ▼
-Phase 6 (Robustesse — CodePatcher, CodeIndexer, WorkflowLibrary)
+Phase 6 (MCP Server) ◀── 🌟 SEUIL DOGFOODING — Workflow construit Workflow
+         │
+         ▼
+Phase 7 (Couches Proactives — Daemon, Watch, ParallelExecutor)
+         │
+         ▼
+Phase 8 (Surfaces Tierces — VS Code, GitHub, Telegram, REST)
          │
     ┌────┴────┐
     ▼         ▼
-Phase 7    Phase 8
-(Génération & Audit)  (Écosystème)
+Phase 9    Phase 10
+(Robustesse + Ingestion)  (Polish — doc, audit, estimate, onboard)
 ```
 
 ---
 
 ## ⚠️ Règles NON-NÉGOCIABLES
 
-1. **`allowed_commands` est une whitelist stricte** — jamais de commande shell dynamique sans être dans la liste
+1. **`AllowedCommandsPolicy` à 3 niveaux** — jamais de commande shell hors built-in safe sans approbation explicite (et apprentissage)
 2. **Jamais de stash automatique** — bloquer et expliquer si répertoire non propre
-3. **Toujours consulter `decisions.log`** avant de coder une tâche impliquant des choix d'architecture
+3. **Toujours consulter `decisions-graph`** avant de coder une tâche — détecter contradictions actives
 4. **Une seule version ACTIVE à la fois** — refuser de démarrer une v1.5 si v1.0 n'est pas COMPLETED
-5. **`ContextManager` charge en hiérarchie stricte** — jamais tout le projet en contexte
+5. **`LLMContextLoader` charge en hiérarchie stricte** — jamais tout le projet en contexte
 6. **Tests obligatoires** — `ExecutionLoop` ne marque pas une tâche `done` si les tests échouent
 7. **Les fichiers `.workflow/` sont la source de vérité** — Git est synchronisé depuis Workflow, pas l'inverse
+8. **`USER_OVERRIDE` ne sont jamais archivés sans confirmation** — skills/decisions édictés par le dev sont sacrés
+9. **Jamais de régénération de fichier complet** — toujours via `CodePatcher` (search/replace blocks ou AST)
+10. **Le protocole `.workflow/` est versionné** — `schema_version` requis, migrations automatiques, validation au boot
 
 ---
 
-## 📊 Outils MCP Exposés (Workflow Core)
+## 📊 Outils MCP Exposés (Workflow Core, Phase 6)
 
 ```
 ── Phase Projet ──────────────────────────────────────────────
@@ -376,67 +522,81 @@ workflow_save_discovery(answers)
 workflow_propose_features()
 workflow_save_features(validated)
 workflow_generate_tasks()
-workflow_validate_task(taskId, approved)
+workflow_validate_task(task_id, approved)
 workflow_set_tech_stack(stack)
 
 ── Gestion des Versions ──────────────────────────────────────
 workflow_version_list()
 workflow_version_create(name, description)
-workflow_version_switch(version)         ← bloque si repo non propre
+workflow_version_switch(version)              # bloque si repo non propre
 workflow_version_add_task(version, task)
-workflow_version_hotfix(name, reason)    ← bloque si repo non propre
+workflow_version_hotfix(name, reason)         # bloque si repo non propre
 workflow_version_complete()
 
 ── Contexte & Exécution ──────────────────────────────────────
 workflow_get_current_task()
 workflow_get_project_context()
 workflow_search_codebase(query)
-workflow_mark_task_done(taskId)
-workflow_mark_task_failed(taskId, reason)
-workflow_log_decision(taskId, decision, reason)
+workflow_mark_task_done(task_id)
+workflow_mark_task_failed(task_id, reason)
+workflow_log_decision(task_id, decision, reason, scope, confidence)
+workflow_get_decision_graph()
+workflow_run_command(command)                 # via AllowedCommandsPolicy
+workflow_approve_command(command, scope)
+workflow_correct(task_id, correction)         # in-flow correction (Phase 5)
 
-── Génération & Audit ────────────────────────────────────────
+── Apprentissage (Pilier 2 — 4 sources) ──────────────────────
+workflow_teach(rule, context, tags, visibility)
+workflow_avoid(rule, reason, context, visibility)
+workflow_learn_from(project_path, target_context, learn, ignore, dry_run)
+workflow_curate_skills(dry_run)
+workflow_list_skills(context)
+workflow_remove_teach_rule(rule_name)
+
+── Contexts (Pilier 7) ───────────────────────────────────────
+workflow_context_list()
+workflow_context_list_available()
+workflow_context_create_from_template(name)
+workflow_context_create_custom(name, parent, description)
+workflow_context_activate(name, scope='project')
+workflow_context_export(name, path)
+workflow_context_install(archive_path)
+workflow_context_fork(source, target)
+workflow_context_delete(name)
+workflow_context_promote_skill(skill_id, from_context, to_context)
+
+── Polish & Différenciateurs ─────────────────────────────────
 workflow_doc_generate()
 workflow_audit()
 workflow_estimate(version)
 workflow_onboard()
+workflow_daily_briefing()
 ```
 
 ---
 
-## 🚀 Roadmap
+## 🚀 Roadmap par Seuils de Capacité
 
-### MVP — Workflow Core + CLI de base
-- Phase 1 : Foundation complète (ProjectMemory, DecisionsLog, SyncChecker)
-- Phase 2 : Les 5 phases projet (génération des fichiers `.workflow/`)
-- Phase 3 : ExecutionLoop basique (build_validate + 3 retries + escalade) + DaemonHeartbeat + WatchMode
-- Phase 4 : MCP Server complet (branché sur Claude Code immédiatement)
-- CLI readline simple pour interagir sans MCP
+### Seuil 1 — Foundations (Phases 1-3)
+Cerveau cognitif fonctionnel. `LLMProvider` route par rôle, `LLMContextLoader` charge en hiérarchie + compresse + résout contexts actifs, `CodePatcher` applique des diffs chirurgicaux, `ExecutionLoop` exécute avec auto-correction et création de skills (sources auto_retry + user_explicit). **Pas encore d'agent utilisable** — c'est la couche moteur.
 
-### V1 — Présence & Intégrations
-- Phase 5 : VS Code Extension (sidebar + annotations inline)
-- Phase 5 : GitHub/GitLab Integration (PR merged → tâche DONE, CI failed → alerte)
-- Phase 5 : `workflow onboard` — onboarding instantané nouveau développeur
-- Phase 5 : Détection et résolution de conflits de décisions entre devs
+### Seuil 2 — Agent autonome (Phases 4-5)
+`PhaseManager` orchestre les 6 phases (revisitables + Starter Mode). `WorkflowAgent` + CLI permettent un usage humain direct. `InFlowCorrector` capture les Ctrl+T. Workflow génère un projet complet de "j'ai une idée" jusqu'à "j'ai des tâches en cours d'exécution".
 
-### V1.5 — Robustesse
-- Phase 6 : `CodePatcher` (diffs chirurgicaux + fallback AST tree-sitter)
-- Phase 6 : `CodeIndexer` (index JSON + variantes LLM + ripgrep)
-- Phase 6 : `WorkflowLibrary` (cross-project learning)
-- `ContextManager` fin (chargement sélectif avancé)
+### Seuil 3 — Dogfooding (Phase 6) ⭐
+`MCPServer` expose tous les outils. `AllowedCommandsPolicy` à 3 niveaux. Branchement Claude Code immédiat. **Workflow construit Workflow** à partir de ce moment. C'est le point où la qualité du produit s'auto-vérifie par usage réel.
 
-### V2 — Génération & Audit
-- Phase 7 : `workflow doc generate` (README + ARCHITECTURE.md + CHANGELOG auto)
-- Phase 7 : `workflow audit` (divergence code/tâches)
-- Phase 7 : `workflow estimate` (estimation basée sur historique réel)
-- Phase 7 : Tests end-to-end sur cycle complet
+### Seuil 4 — Proactif (Phase 7)
+`DaemonHeartbeat` (briefings + auto-curator), `WatchMode` (annotation passive), `ParallelExecutor` (git worktrees). L'agent devient présent en arrière-plan sans interrompre.
 
-### V3 — Écosystème
-- Phase 8 : Bot Telegram (notifications + interactions)
-- Phase 8 : API REST locale
-- Phase 8 : CLI Ink (React terminal)
-- Phase 8 : workflow-hub (marketplace de patterns communautaire)
-- Protocole `workflow-sync` pour partager `.workflow/` en ligne
+### Seuil 5 — Multi-surface (Phase 8)
+VS Code extension, Telegram bot, GitHub integration, REST API — **tous clients du protocole MCP**. `MCPClient` réutilisable. Aucune logique métier dupliquée.
+
+### Seuil 6 — Robustesse + Ingestion (Phase 9)
+`CodeIndexer` pour gros projets, `WorkflowLibrary` cross-projet, `BreakingChangeDetector`, **`ProjectIngester` (`workflow learn-from`)** — la 4ème source d'apprentissage qui valorise les projets passés.
+
+### Seuil 7 — Polish & Différenciateurs (Phase 10)
+`workflow doc generate`, `workflow audit`, `workflow estimate`, `workflow onboard`. Les commandes qui rendent Workflow unique et visible.
 
 ---
 
@@ -445,7 +605,7 @@ workflow_onboard()
 ### Au début de chaque session :
 1. **Lire `.claude/PROGRESS.md`** — indique exactement où on s'est arrêté
 2. Identifier la phase et la tâche en cours
-3. Lire le fichier de tâche correspondant
+3. Lire le fichier de tâche correspondant dans `.claude/docs/tasks/phase-X-*/`
 4. Reprendre exactement là où on s'est arrêté
 
 ### Après avoir complété une tâche :
@@ -453,6 +613,7 @@ workflow_onboard()
 2. Committer le code + `PROGRESS.md` ensemble
 
 📄 **Fichier de suivi** : `.claude/PROGRESS.md`
+📄 **Vue d'ensemble** : `.claude/docs/tasks/INDEX.md`
 
 ---
 
@@ -462,4 +623,4 @@ Les extraits de code dans les fichiers de tâches sont **indicatifs**, pas compl
 
 ---
 
-*Workflow est développé par Alister. Le but : construire l'outil qu'on aurait voulu avoir pour construire LinkStream — un agent qui ne perd jamais le fil, version par version, du début jusqu'à la livraison.*
+*Workflow est développé par Alister. Le but : construire l'outil qu'on aurait voulu avoir pour construire LinkStream — un agent qui ne perd jamais le fil, version par version, du début jusqu'à la livraison, et qui devient plus intelligent à chaque projet grâce à sa mémoire institutionnelle organisée en cabinet d'expertises spécialisées.*

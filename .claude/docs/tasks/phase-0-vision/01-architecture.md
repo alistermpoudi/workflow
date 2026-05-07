@@ -6,18 +6,19 @@ Workflow est une application **Python 3.12+** structurée en couches clairement 
 
 > Voir aussi : [`02-pillars.md`](02-pillars.md) — détail des 6 bets architecturaux load-bearing.
 
-## Les 6 Piliers Architecturaux
+## Les 7 Piliers Architecturaux
 
-Tout le découpage de phases ci-dessous découle de ces 6 piliers :
+Tout le découpage de phases ci-dessous découle de ces 7 piliers :
 
 | # | Pilier | Phase de build |
 |---|--------|----------------|
 | 1 | `.workflow/` comme **protocole versionné** (pas dossier ad-hoc) | Phase 1 |
-| 2 | Boucle **Skills + Curator** (mémoire institutionnelle cross-projet) | Phases 1 + 3 |
+| 2 | **Skills + Curator + 4 sources** (auto_retry, teach, in-flow, ingestion) | Phases 1 + 3 + 5 + 9 |
 | 3 | **Multi-LLM par rôle** (`reasoning`, `code_generation`, `fast`, `curator`, `compression`) | Phase 2 |
 | 4 | **Décisions actives + graphe rétro-propageant** (CONTRADICTS, SUPERSEDES…) | Phase 1 |
 | 5 | **CodePatcher chirurgical** dès le départ (jamais de fichier complet régénéré) | Phase 2 |
 | 6 | **MCP Server** comme surface primaire (CLI/VS Code/Telegram = clients du protocole) | Phase 6 |
+| 7 | **Contexts spécialisés** — hiérarchie + héritage + templates bundled | Phase 1 |
 
 ---
 
@@ -41,9 +42,10 @@ Tout le découpage de phases ci-dessous découle de ces 6 piliers :
                                │
 ┌──────────────────────────────▼───────────────────────────────────────────┐
 │  CORE — Cerveau cognitif                                                 │
-│  ProjectMemory  │  ContextManager (tier + compression Hermes-style)     │
-│  PhaseManager   │  DecisionsLog + DecisionsGraph (rétro-propagation)    │
-│  SkillManager   │  SkillCurator   │  SyncChecker  │  TaskManager        │
+│  ProjectMemory   │  LLMContextLoader (tier + compression Hermes-style)  │
+│  PhaseManager    │  DecisionsLog + DecisionsGraph (rétro-propagation)   │
+│  SkillManager    │  SkillCurator   │  TeachSystem  │  ContextRegistry   │
+│  SyncChecker     │  TaskManager    │  InFlowCorrector  │  ProjectIngester│
 └──────────────────────────────┬───────────────────────────────────────────┘
                                │
 ┌──────────────────────────────▼───────────────────────────────────────────┐
@@ -123,22 +125,26 @@ src/workflow/
 ```
 .workflow/
 ├── project.json
-│   # { name, description, createdAt, currentVersion, status }
+│   # { schema_version, name, description, created_at, status,
+│   #   active_version, active_contexts: [_global, mobile, mobile.flutter] }
 │
 ├── vision.md
-│   # Sortie Phase 1 — description libre de l'application
+│   # Sortie Discovery — description libre de l'application
 │
 ├── features.json
-│   # Sortie Phase 2 — liste des fonctionnalités validées par version
-│   # { "v1.0": [{ id, name, description, priority }], "v1.5": [...] }
+│   # Sortie Specification — fonctionnalités par version
+│   # { "v1.0": [{ id, name, description, priority, intent }], "v1.5": [...] }
 │
 ├── tech-stack.json
-│   # Sortie Phase 4 — stack + commandes + sécurité
+│   # Sortie Architecture — stack + commandes
 │   # { language, framework, database, build_validate, test, allowed_commands[] }
 │
+├── design.json
+│   # Sortie DesignSystem — style + couleurs + références
+│
 ├── code-index.json
-│   # Mis à jour en continu pendant la réalisation
-│   # { "src/auth.js": [{ name: "login", type: "function", line: 42 }] }
+│   # Mis à jour en continu (Phase 9 — CodeIndexer)
+│   # { "src/auth.py": [{ name: "login", type: "function", line: 42 }] }
 │
 ├── decisions.log
 │   # Journal actif texte brut — une entrée par décision technique
@@ -146,12 +152,16 @@ src/workflow/
 │
 ├── decisions-graph.json
 │   # Relations entre décisions : CONTRADICTS, DEPENDS_ON, SUPERSEDES, REFINES
-│   # Niveaux de confiance : HIGH | MEDIUM | LOW
-│   # Détection de contradictions actives
+│   # Niveaux de confiance : USER_OVERRIDE | HIGH | MEDIUM | LOW
+│   # Détection automatique de contradictions
 │
-├── failure-patterns.json
-│   # Erreurs connues + solutions cross-tâches (appris par FailurePatterns.js)
-│   # [{ fingerprint, fix, occurrences, lastSeen, learnedAt }]
+├── allowed-commands.json
+│   # Whitelist + apprentissage — voir Pilier 6
+│   # { allowed: [{ command, scope, approved_at, approved_by }], denied: [...] }
+│
+├── skills/
+│   # Skills strictement projet (le reste vit dans les contexts globaux)
+│   └── *.md
 │
 ├── questions/
 │   # WatchMode — questions posées à l'utilisateur sans interruption
@@ -163,8 +173,8 @@ src/workflow/
 │
 └── versions/
     ├── v1.0/
-    │   ├── meta.json         # { title, description, status, branch, createdAt }
-    │   ├── progress.json     # { done: [], pending: [], failed: [] }
+    │   ├── meta.json         # { title, description, status, branch, created_at }
+    │   ├── progress.json     # { done: [], pending: [], failed: [], deferred: [] }
     │   └── tasks/
     │       ├── TASK-001.md   # Setup + linter (systématique)
     │       ├── TASK-002.md   # Tests + smoke test (systématique)
@@ -177,53 +187,64 @@ src/workflow/
     └── v2.0/
 ```
 
+> Voir aussi `~/.workflow/contexts/` (Pilier 7) — l'arborescence globale des contexts hiérarchiques (`_global`, `mobile`, `mobile.flutter`, etc.) qui contient les skills + decisions cross-projet.
+
 ---
 
-## `ContextManager` — Hiérarchie de Chargement
+## `LLMContextLoader` — Hiérarchie de Chargement
 
-C'est le composant le plus critique pour ne pas reproduire le problème du context overflow.
+C'est le composant le plus critique pour ne pas reproduire le problème du context overflow. Il charge les skills + decisions des **contexts actifs** (Pilier 7) avec scoring pondéré par spécificité.
 
-```javascript
-// Ordre de chargement strict — ne jamais déroger
+```python
+# Ordre de chargement strict — ne jamais déroger
 
-class ContextManager {
-  // Niveau 1 : Système — toujours chargé (~500 tokens max)
-  async loadSystemContext() {
-    return {
-      project: await ProjectMemory.getProjectSummary(),  // nom, stack, version active
-      techStack: await ProjectMemory.getTechStack(),
-    };
-  }
+class LLMContextLoader:
+    # Niveau 1 : Système — toujours chargé (~500 tokens max)
+    async def get_system_context(self) -> dict:
+        return {
+            'project': await self.memory.get_project_summary(),
+            'tech_stack': await self.memory.get_tech_stack(),
+            'active_contexts': await self.memory.get_active_contexts(),
+        }
 
-  // Niveau 2 : Version active — chargé au switch de version
-  async loadVersionContext(version) {
-    return {
-      meta: await ProjectMemory.getVersionMeta(version),
-      progress: await ProjectMemory.getProgress(version), // tâches done/pending — PAS le contenu
-    };
-  }
+    # Niveau 2 : Version active — chargé au switch de version
+    async def get_version_context(self, version: str) -> dict:
+        return {
+            'meta': await self.memory.get_version_meta(version),
+            'progress': await self.memory.get_progress(version),  # IDs only, pas le contenu
+        }
 
-  // Niveau 3 : Tâche courante — chargé au start task
-  async loadTaskContext(taskId) {
-    const task = await TaskManager.getTask(taskId);
-    const relevantFiles = await FileSystem.readSelective(task.filesToModify);
-    // Scoring de pertinence : remplace le keyword matching statique
-    // Score = similarité(décision, tâche.title + tâche.intent) × récence × confiance
-    // Budget tokens = 2000 | Seuil = 0.4
-    const scoredDecisions = await this._loadScoredDecisions(task);
-    return { task, relevantFiles, relevantDecisions: scoredDecisions };
-  }
+    # Niveau 3 : Tâche courante — chargé au start task
+    async def get_task_context(self, version: str, task_id: str) -> dict:
+        task = await self.tasks.get_task(version, task_id)
+        relevant_files = await self.fs.read_selective(task.get('files_to_modify') or [])
 
-  // Niveau 4 : On-demand — uniquement si nécessaire
-  async loadOnDemand(query) {
-    return CodeIndexer.search(query); // (v1.5)
-  }
-}
+        # Skills + avoidances depuis les contexts actifs (Pilier 7)
+        active_contexts = await self.memory.get_active_contexts()
+        skill_context = self.skills.get_skills_for_context(task, active_contexts)
+        avoidances = self.teach.get_active_avoidances(active_contexts)
+
+        # Scoring de pertinence : Score = similarité × récence × scope × confiance
+        # USER_OVERRIDE > HIGH > MEDIUM > LOW
+        # Budget tokens = 2000 | Seuil = 0.4
+        scored_decisions = await self._load_scored_decisions(task)
+
+        return {
+            'task': task,
+            'relevant_files': relevant_files,
+            'relevant_decisions': scored_decisions,
+            'skill_context': skill_context,
+            'avoidances': avoidances,
+        }
+
+    # Niveau 4 : On-demand — uniquement si nécessaire
+    async def load_on_demand(self, query: str) -> list[dict]:
+        return await self.indexer.query(query)  # CodeIndexer Phase 9
 ```
 
 **Règle** : Charger uniquement le niveau nécessaire pour l'action en cours. Ne jamais passer de niveau 4 en "contexte de base".
 
-**Scoring de pertinence** : Le `ContextManager` ne charge pas les décisions mécaniquement. Il calcule `Score = similarité × récence × confiance` et n'inclut que les décisions avec score ≥ 0.4, dans la limite d'un budget de 2000 tokens. Le champ `intent` de la tâche est inclus dans le texte de référence pour le scoring.
+**Scoring de pertinence** : `LLMContextLoader` ne charge pas les décisions mécaniquement. Il calcule `Score = similarité × récence × scope × confiance` et n'inclut que les décisions avec score ≥ 0.4, dans la limite d'un budget de 2000 tokens. Le champ `intent` de la tâche est inclus dans le texte de référence pour le scoring. Skills `USER_OVERRIDE` battent toujours les autres au scoring final.
 
 ---
 
@@ -232,133 +253,176 @@ class ContextManager {
 Au démarrage de chaque session :
 
 ```javascript
-class SyncChecker {
-  async check() {
-    // 1. Vérifier cohérence branche Git / version active
-    const activeBranch = await GitManager.currentBranch();
-    const activeVersion = await ProjectMemory.getActiveVersion();
+class SyncChecker:
+    async def check(self) -> dict:
+        # 0. Valider la conformité au protocole .workflow/ (Pilier 1)
+        errors = self.validator.validate_workflow_dir(self.workflow_root)
+        if errors:
+            return {'type': 'PROTOCOL_INVALID', 'errors': errors}
 
-    if (activeBranch !== `workflow/${activeVersion}`) {
-      return {
-        type: 'BRANCH_MISMATCH',
-        message: `Branche Git "${activeBranch}" ≠ version active "${activeVersion}"`
-      };
-    }
+        # 1. Vérifier cohérence branche Git / version active
+        active_branch = await self.git.current_branch()
+        active_version = await self.memory.get_active_version()
 
-    // 2. Détecter fichiers modifiés manuellement depuis la dernière session
-    const lastSession = await ProjectMemory.getLastSessionTimestamp();
-    const modifiedFiles = await GitManager.getModifiedSince(lastSession);
+        if active_branch != f'workflow/{active_version}':
+            return {
+                'type': 'BRANCH_MISMATCH',
+                'message': f'Branche "{active_branch}" ≠ version active "{active_version}"',
+            }
 
-    if (modifiedFiles.length > 0) {
-      // 3. Soumettre le diff au LLM pour analyse sémantique
-      const diff = await GitManager.getDiff(modifiedFiles);
-      return { type: 'MANUAL_CHANGES', files: modifiedFiles, diff };
-    }
+        # 2. Détecter fichiers modifiés manuellement depuis la dernière session
+        last_session = await self.memory.get_last_session_timestamp()
+        modified_files = await self.git.get_modified_since(last_session)
 
-    return { type: 'CLEAN' };
-  }
-}
+        if modified_files:
+            # 3. Soumettre le diff au LLM pour analyse sémantique
+            diff = await self.git.get_diff(modified_files)
+            return {'type': 'MANUAL_CHANGES', 'files': modified_files, 'diff': diff}
+
+        # 4. Alerter si contradictions actives dans le decisions-graph
+        contradictions = await self.graph.find_active_contradictions()
+        if contradictions:
+            return {'type': 'CONTRADICTIONS', 'count': len(contradictions)}
+
+        return {'type': 'CLEAN'}
 ```
 
 ---
 
 ## `ExecutionLoop` — Boucle d'Auto-Correction
 
-```javascript
-class ExecutionLoop {
-  async executeTask(task) {
-    // Consulter decisions.log scoré avant de commencer
-    const decisions = await ContextManager.loadTaskContext(task.id); // scoring activé
-    const errorHistory = [];
+```python
+class ExecutionLoop:
+    async def run(self, task_ctx: dict) -> dict:
+        task = task_ctx['task']
+        relevant_files = task_ctx['relevant_files']
+        relevant_decisions = task_ctx['relevant_decisions']
+        skill_context = task_ctx.get('skill_context', '')
 
-    let attempts = 0;
-    while (attempts < 3) {
-      attempts++;
+        last_error = None
+        attempts: list[str] = []
 
-      // Chercher un pattern d'échec connu AVANT de générer le code
-      const knownFix = await FailurePatterns.match(lastError?.output);
-      if (knownFix) context.knownFix = knownFix; // injecté dans le prompt
+        for attempt in range(MAX_RETRIES + 1):
+            # Chercher un fix connu (skill) AVANT de générer
+            known_fix = self.skills.find_fix_for_error(last_error['output']) if last_error else None
 
-      // Générer le code (avec intent injecté dans le prompt)
-      const code = await LLMProvider.generateCode(task, context, decisions);
-      await FileSystem.applyCode(code);
+            # Construire le prompt — patches via CodePatcher (jamais de fichier complet)
+            if attempt == 0:
+                prompt = PromptBuilder.generate_code(
+                    task, relevant_files, relevant_decisions, skill_context
+                )
+            else:
+                prompt = PromptBuilder.generate_code_retry(
+                    task, relevant_files, relevant_decisions, last_error,
+                    known_fix, skill_context,
+                )
 
-      // Valider
-      const buildResult = await this.runBuildValidate();
-      if (!buildResult.success) {
-        errorHistory.push(buildResult.output);
-        // Détecter boucle stérile (80% de chevauchement sur les 2 dernières erreurs)
-        if (this._isLooping(errorHistory)) {
-          return { success: false, escalate: true, reason: 'LOOP_DETECTED' };
-        }
-        continue;
-      }
+            raw_response = await self.llm.ask(prompt, role='code_generation')
+            attempts.append(raw_response)
 
-      const testResult = await this.runTests();
-      if (!testResult.success) {
-        errorHistory.push(testResult.output);
-        if (this._isLooping(errorHistory)) {
-          return { success: false, escalate: true, reason: 'LOOP_DETECTED' };
-        }
-        continue;
-      }
+            # Vérifier si l'utilisateur a interrompu (Ctrl+T) — Phase 5
+            if self.corrector and await self.corrector.is_interrupt_pending():
+                await self.corrector.consume_interrupt(task_ctx, raw_response)
+                continue  # Retry avec le nouveau skill USER_OVERRIDE injecté
 
-      // Succès — apprendre des patterns d'échec si retry
-      if (errorHistory.length > 0) {
-        await FailurePatterns.learnFromSuccess(errorHistory, code.response);
-      }
-      await TaskManager.markDone(task.id);
-      await DecisionsLog.logDecisions(task.id, code.decisions);
-      return { success: true };
-    }
+            # Extraire et persister les décisions techniques annotées
+            await self._extract_decisions(task['id'], raw_response)
 
-    // Échec après 3 tentatives → escalade
-    return {
-      success: false,
-      escalate: true,
-      context: await this.buildEscalationContext(task, attempts)
-    };
-  }
-}
+            # Appliquer les patches via CodePatcher (Pilier 5)
+            patches = self.code_patcher.parse_patches(raw_response)
+            results = await self.code_patcher.apply(patches)
+            failed = [r for r in results if not r.success]
+            if failed:
+                last_error = {'output': '\n'.join(f'{r.file_path}: {r.error}' for r in failed)}
+                if attempt < MAX_RETRIES:
+                    continue
+                return {'success': False, 'error': last_error['output'], 'attempts': attempts}
+
+            # Valider build + tests
+            for cmd in (self.tech_stack['build_validate'], self.tech_stack['test']):
+                result = await self._run_command(cmd)
+                if result['exit_code'] != 0:
+                    last_error = result
+                    break
+            else:
+                # Tout OK
+                if attempt > 0 and last_error:
+                    # Retry réussi → créer un skill auto (source: auto_retry)
+                    await self._maybe_create_skill(task, attempts, last_error)
+                await self.tasks.mark_done(task['id'])
+                return {'success': True, 'attempts': attempts}
+
+            if attempt >= MAX_RETRIES:
+                return {'success': False, 'error': last_error['output'], 'attempts': attempts}
 ```
 
 ---
 
 ## `MCPServer` — Outils Exposés avec Sécurité
 
-```javascript
-// Validation stricte — s'applique à TOUTES les interfaces
-function validateCommand(cmd, techStack) {
-  if (!techStack.allowed_commands.includes(cmd)) {
-    logger.warn(`Commande rejetée : ${cmd}`);
-    throw new Error(
-      `"${cmd}" non autorisée. Seules les commandes de tech-stack.json#allowed_commands sont acceptées.`
-    );
-  }
-}
+```python
+# Validation stricte via AllowedCommandsPolicy (Phase 6 — apprentissage + 3 niveaux)
+async def workflow_run_command(args: dict):
+    if not await policy.authorize(args['command']):
+        raise PermissionError(f'Commande non autorisée : {args["command"]}')
+    ...
 
-// Outils MCP exposés (liste complète dans CLAUDE.md)
-const tools = [
-  'workflow_start_project',
-  'workflow_save_discovery',
-  'workflow_propose_features',
-  'workflow_save_features',
-  'workflow_generate_tasks',
-  'workflow_validate_task',
-  'workflow_set_tech_stack',
-  'workflow_version_list',
-  'workflow_version_create',
-  'workflow_version_switch',    // bloque si repo non propre
-  'workflow_version_add_task',
-  'workflow_version_hotfix',    // bloque si repo non propre
-  'workflow_version_complete',
-  'workflow_get_current_task',
-  'workflow_get_project_context',
-  'workflow_search_codebase',
-  'workflow_mark_task_done',
-  'workflow_mark_task_failed',
-  'workflow_log_decision',
-];
+# Outils MCP exposés (liste complète Phase 6)
+TOOLS = [
+    # Phase Projet
+    'workflow_start_project',
+    'workflow_save_discovery',
+    'workflow_propose_features',
+    'workflow_save_features',
+    'workflow_generate_tasks',
+    'workflow_validate_task',
+    'workflow_set_tech_stack',
+
+    # Versions
+    'workflow_version_list',
+    'workflow_version_create',
+    'workflow_version_switch',     # bloque si repo non propre
+    'workflow_version_add_task',
+    'workflow_version_hotfix',     # bloque si repo non propre
+    'workflow_version_complete',
+
+    # Contexte & Exécution
+    'workflow_get_current_task',
+    'workflow_get_project_context',
+    'workflow_search_codebase',
+    'workflow_mark_task_done',
+    'workflow_mark_task_failed',
+    'workflow_log_decision',
+    'workflow_get_decision_graph',
+    'workflow_run_command',         # avec policy check
+    'workflow_approve_command',
+    'workflow_correct',             # in-flow correction (Phase 5)
+
+    # Apprentissage (Pilier 2 — 4 sources)
+    'workflow_teach',
+    'workflow_avoid',
+    'workflow_learn_from',          # ingestion projet (Phase 9)
+    'workflow_curate_skills',       # déclencher Curator
+    'workflow_list_skills',
+
+    # Contexts (Pilier 7)
+    'workflow_context_list',
+    'workflow_context_list_available',
+    'workflow_context_create_from_template',
+    'workflow_context_create_custom',
+    'workflow_context_activate',
+    'workflow_context_export',
+    'workflow_context_install',
+    'workflow_context_fork',
+    'workflow_context_promote_skill',
+
+    # Polish
+    'workflow_audit',
+    'workflow_doc_generate',
+    'workflow_estimate',
+    'workflow_onboard',
+    'workflow_daily_briefing',
+]
 ```
 
 ---
@@ -397,7 +461,7 @@ const tools = [
 ## Roadmap Technique (par seuil de capacité, pas par version produit)
 
 ### Seuil 1 — Foundations (Phases 1-3)
-Le cerveau cognitif fonctionne. `LLMProvider` route par rôle, `ContextManager` charge en hiérarchie + compresse, `CodePatcher` applique des diffs chirurgicaux, `ExecutionLoop` exécute avec auto-correction et création de skills. **Pas encore d'agent utilisable** — c'est la couche moteur.
+Le cerveau cognitif fonctionne. `LLMProvider` route par rôle, `LLMContextLoader` charge en hiérarchie + compresse + résout les contexts actifs, `CodePatcher` applique des diffs chirurgicaux, `ExecutionLoop` exécute avec auto-correction et création de skills. **Pas encore d'agent utilisable** — c'est la couche moteur.
 
 ### Seuil 2 — Agent autonome (Phases 4-5)
 `PhaseManager` orchestre les 5 phases (revisitables). `WorkflowAgent` + CLI permettent un usage humain direct. Workflow génère un projet complet de "j'ai une idée" jusqu'à "j'ai des tâches en cours d'exécution".

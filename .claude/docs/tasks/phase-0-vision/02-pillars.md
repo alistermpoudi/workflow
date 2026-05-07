@@ -88,7 +88,7 @@ L'ordre de build des phases (1 à 10) découle directement de ces piliers : les 
 - `DecisionsGraph` stocke relations + niveaux de confiance (HIGH/MEDIUM/LOW)
 - À chaque ajout d'une décision : check des contradictions avec les existantes
 - Si nouvelle décision contredit une ancienne → alerte + propagation aux tâches `pending`
-- `ContextManager._load_scored_decisions()` utilise le graphe pour le scoring
+- `LLMContextLoader._load_scored_decisions()` utilise le graphe pour le scoring
 
 **Tâches dédiées** :
 - `phase-1-foundation/06-decisions-log.md`
